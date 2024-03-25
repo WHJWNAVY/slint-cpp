@@ -12,8 +12,10 @@ include(CMakeDependentOption)
 include(FetchContent)
 FetchContent_Declare(
     Corrosion
-    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG v0.4.7
+#     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+#     GIT_TAG v0.4.7
+    URL https://github.com/corrosion-rs/corrosion/archive/refs/tags/v0.4.7.tar.gz
+    URL_HASH MD5=c4430bdd2c6a59537ca251d647dcb4b7
 )
 FetchContent_MakeAvailable(Corrosion)
 
