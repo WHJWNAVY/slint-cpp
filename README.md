@@ -1,259 +1,135 @@
-<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial -->
+# Slint-Cpp 静态编译
 
-![Slint](./logo/slint-logo-full-light.svg#gh-light-mode-only) ![Slint](./logo/slint-logo-full-dark.svg#gh-dark-mode-only)
+## 安装Rust和C++工具链
 
-[![Build Status](https://github.com/slint-ui/slint/workflows/CI/badge.svg)](https://github.com/slint-ui/slint/actions)
-[![REUSE status](https://api.reuse.software/badge/github.com/slint-ui/slint)](https://api.reuse.software/info/github.com/slint-ui/slint)
-[![Discussions](https://img.shields.io/github/discussions/slint-ui/slint)](https://github.com/slint-ui/slint/discussions)
+* **Slint**是基于Rust语言开发的，所以编译Slint-cpp需要Rust工具链C++工具链
+* 本文将使用**Rust:x86_64-pc-windows-gnu + Cpp:llvm-mingw-20240320-ucrt-x86_64**工具链编译
 
-Slint is a declarative GUI toolkit to build native user interfaces for desktop
-and embedded applications written in Rust, C++, or JavaScript. The name *Slint*
-is derived from our design goals:
+### 参考链接
+* [Releases · mstorsjo/llvm-mingw](https://github.com/mstorsjo/llvm-mingw/releases)
+* [Releases · niXman/mingw-builds-binaries](https://github.com/niXman/mingw-builds-binaries/releases)
 
-- **Scalable**: Slint should support responsive UI design, allow cross-platform
-    usage across operating systems and processor architectures and support
-    multiple programming languages.
-- **Lightweight**: Slint should require minimal resources, in terms of memory
-    and processing power, and yet deliver a smooth, smartphone-like user
-    experience on any device.
-- **Intuitive**: Designers and developers should feel productive while enjoying
-    the GUI design and development process. The design creation tools should be
-    intuitive to use for the designers. Similarly for the developers, the APIs
-    should be consistent and easy to use, no matter which programming language
-    they choose.
-- **Native**: GUI built with Slint should match the end users' expectations of a
-    native application irrespective of the platform - desktop, mobile, web or
-    embedded system. The UI design should be compiled to machine code and provide
-    flexibility that only a native application can offer: Access full operating
-    system APIs, utilize all CPU and GPU cores, connect to any peripheral.
+### 注意事项
 
-We invite you to use Slint and be part of its community.
+* 安装好**llvm-mingw-20240320-ucrt-x86_64**工具链后编译Slint-Cpp时会出现找不到**libgcc.a**和**libgcc_eh.a**的情况, 通过搜索发现**libgcc.a**和**libgcc_eh.a**这两个库包含在**MinGW-w64(x86_64-13.2.0-release-posix-seh-ucrt-rt_v11-rev1)**工具链中, 所以需要将MinGW-w64工具链下的**lib\gcc**目录拷贝到LLVM-MinGW工具链的**lib**目录下
 
-Visit [#MadeWithSlint](https://madewithslint.com) to view some of the projects
-using Slint and join us in the Slint community.
+* ![image.png](docs/LIBGCC_ET.png)
 
-## Current Status
+* 本次编译使用CMake工具，CMake依赖于GNU-Make, 需要把**LLVM-MinGW**工具链**bin**目录下的**mingw32-make.exe**工具拷贝重命名为**make.exe**
+* ![image.png](docs/mingw-make.png)
 
-Slint is in active development. The state of support for each platform is as
-follows:
+* 安装完工具链后把**LLVM-MinGW**工具链**bin**目录加入到环境变量中，同时新建一个名为**HOME**的环境变量，其值为**%USERPROFILE%**
+* ![image.png](docs/llvm-mingw.png)
+* ![image.png](docs/env-home.png)
 
-- **Embedded**: *Ready*. Slint is being used by customers in production on embedded
-    devices running embedded Linux and Windows. The Slint run-time requires less than
-    300KiB of RAM and can run on different processor architectures such as ARM Cortex M,
-    ESP32, STM32 from the MCU category to ARM Cortex A, Intel x86 from the MPU category.
-- **Desktop**: *In Progress*. While Slint is a good fit on Windows, Linux and Mac,
-    we are working on improving the platform support in subsequent releases.
-- **Web**: *In Progress*. Slint apps can be compiled to WebAssembly and can run
-    in a web browser. As there are many other web frameworks, the web platform
-    is not one of our primary target platforms. The web support is currently
-    limited to demo purposes.
-- **Mobile**
-  - Android: *In Progress*. Track the progress of work here https://github.com/slint-ui/slint/issues/46.
-  - iOS: *Todo*. Support for iOS will commence after the initial support for Android is completed.
+### 检查工具链
+* ![image.png](docs/toolchain.png)
 
-### Accessibility
+## 开始编译Slint-Cpp
+### 修改Corrosion-rs包下载方式
+* 默认Slint-Cpp编译时需要通过git在线下载**corrosion-rs**包, 但是由于我们是Windows环境没有git工具, 所以需要修改corrosion-rs包的下载方式, 这里使用**HTTP**方式下载
+* ![image.png](docs/corrosion-rs.png)
 
-Slint supports keyboard based navigation of many widgets, and user interfaces
-are scalable. The basic infrastructure for assistive technology like screen
-readers is in place. We're aware that more work is needed to get best-of-class
-support for users with special needs.
-
-## Demos
-
-### Embedded
-
-| RaspberryPi                          | STM32                         | RP2040                         |
-| ------------------------------------ | ----------------------------- | ------------------------------ |
-| [Video of Slint on Raspberry Pi][#1] | [Video of Slint on STM32][#2] | [Video of Slint on RP2040][#3] |
-
-### Desktop
-
-| Windows                                     | macOS                                     | Linux                                     |
-| ------------------------------------------- | ----------------------------------------- | ----------------------------------------- |
-| ![Screenshot of the Gallery on Windows][#4] | ![Screenshot of the Gallery on macOS][#5] | ![Screenshot of the Gallery on Linux][#6] |
-
-### Web using WebAssembly
-
-| Printer Demo                                | Slide Puzzle                                 | Energy Monitor                                       | Widget Gallery                                |
-| ------------------------------------------- | -------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
-| [![Screenshot of the Printer Demo][#7]][#8] | [![Screenshot of the Slide Puzzle][#9]][#10] | [![Screenshot of the Energy Monitor Demo][#11]][#12] | [![Screenshot of the Gallery Demo][#13]][#14] |
-
-## Get Started
-
-### Hello World
-
-The UI is defined in a Domain Specific Language that is declarative, easy to use,
-intuitive, and provides a powerful way to describe graphical elements, their
-placement, their hierarchy, property bindings, and the flow of data through the
-different states.
-
-Here's the obligatory "Hello World":
-
-```slint
-export component HelloWorld inherits Window {
-    width: 400px;
-    height: 400px;
-
-    Text {
-       y: parent.width / 2;
-       x: parent.x + 200px;
-       text: "Hello, world";
-       color: blue;
-    }
-}
+```bash
+URL https://github.com/corrosion-rs/corrosion/archive/refs/tags/v0.4.7.tar.gz
+URL_HASH MD5=c4430bdd2c6a59537ca251d647dcb4b7
 ```
 
-### Documentation
+### 编译参数
+```bash
+cmake -G "MinGW Makefiles" -B "my_build" \
+  -DCMAKE_BUILD_TYPE:STRING=MinSizeRel \
+  -DBUILD_SHARED_LIBS:BOOL=OFF \
+  -DSLINT_FEATURE_RENDERER_FEMTOVG:BOOL=OFF \
+  -DSLINT_FEATURE_RENDERER_SOFTWARE:BOOL=ON \
+  -DRust_CARGO_TARGET=x86_64-pc-windows-gnu \
+  -DSLINT_STYLE=native \
+  -DDEFAULT_SLINT_EMBED_RESOURCES:STRING=embed-for-software-renderer \
+  -DCMAKE_CXX_COMPILER:STRING="C:/LLVM-MinGW/ucrt/bin/clang++.exe" \
+  -DCMAKE_C_COMPILER:STRING="C:/LLVM-MinGW/ucrt/bin/clang.exe" \
+  -DCMAKE_MAKE_PROGRAM:FILEPATH="C:/LLVM-MinGW/ucrt/bin/make.exe" \
+  -DCMAKE_CXX_FLAGS:STRING="-Os -flto -DNDEBUG -ffunction-sections -fdata-sections" \
+  -DCMAKE_C_FLAGS:STRING="-Os -flto -DNDEBUG -ffunction-sections -fdata-sections" \
+  -DCMAKE_CXX_STANDARD_LIBRARIES:STRING="-lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lcomctl32 -liphlpapi -lws2_32 -lntoskrnl -lbcrypt -lopengl32 -luiautomationcore -lpropsys -ldwmapi -limm32 -luxtheme -luserenv" \
+  -DCMAKE_CXX_STANDARD_LIBRARIES:STRING="-lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lcomctl32 -liphlpapi -lws2_32 -lntoskrnl -lbcrypt -lopengl32 -luiautomationcore -lpropsys -ldwmapi -limm32 -luxtheme -luserenv" \
+  -DCMAKE_STATIC_LINKER_FLAGS:STRING="-Os -DNDEBUG -Wl,--gc-sections" \
+  -DCMAKE_INSTALL_PREFIX:PATH="my_install"
+```
 
-For more details, check out the [Slint Language Documentation](https://slint.dev/docs/slint).
+### 编译脚本
+```bat
+@echo off
 
-The [examples](examples) folder contains examples and demos, showing how to
-use the Slint markup language and how to interact with a Slint user interface
-from supported programming languages.
+set cmake_exe=_FULL_PATH_TO_CMAKE_EXE_
+set upx_exe=_FULL_PATH_TO_UPX_EXE_
+set llvm_dir=_FULL_PATH_TO_LLVM_TOOLCHAIN_
+rem example: C:/LLVM-MinGW/ucrt
 
-The `docs` folder contains a lot more information, including
-[build instructions](docs/building.md), and
-[internal developer docs](docs/development.md).
+set strip_exe=%llvm_dir%/bin/llvm-strip.exe
 
-Refer to the README of each language directory in the `api` folder:
+set build_dir=my_build
+set install_dir=my_install
 
-- [C++](api/cpp) ([Documentation][#15] | [Tutorial][#16] | [Getting Started Template][#17])
-- [Rust](api/rs/slint) [![Crates.io][#18]][#19] ([Documentation][#20] | [Tutorial][#21] | [Tutorial Video][#22] | [Getting Started Template][#23])
-- [JavaScript/NodeJS (Beta)](api/node) [![npm][#24]][#25] ([Documentation][#26] | [Tutorial][#27] | [Getting Started Template][#28])
+set cflags=-Os -flto -DNDEBUG -ffunction-sections -fdata-sections
+set ldlibrary=-lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lcomctl32 -liphlpapi -lws2_32 -lntoskrnl -lbcrypt -lopengl32 -luiautomationcore -lpropsys -ldwmapi -limm32 -luxtheme -luserenv
+set ldflags=-Os -DNDEBUG -Wl,-subsystem,windows -Wl,--gc-sections
 
-## Architecture
+echo "Del build cache"
+rmdir /s /q %build_dir%
+rmdir /s /q %install_dir%
+mkdir %build_dir%
+mkdir %install_dir%
+call :my_sleep
 
-An application is composed of the business logic written in Rust, C++, or
-JavaScript and the `.slint` user interface design markup, which is compiled to
-native code.
+echo "Run cmake generator"
+%cmake_exe% -G "MinGW Makefiles" -B "%build_dir%" ^
+	-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON ^
+	-DCMAKE_BUILD_TYPE:STRING=MinSizeRel ^
+	-DBUILD_SHARED_LIBS:BOOL=OFF ^
+	-DSLINT_STYLE=native ^
+	-DSLINT_FEATURE_RENDERER_FEMTOVG:BOOL=OFF ^
+	-DSLINT_FEATURE_RENDERER_SOFTWARE:BOOL=ON ^
+	-DRust_CARGO_TARGET=x86_64-pc-windows-gnu ^
+	-DDEFAULT_SLINT_EMBED_RESOURCES:STRING=embed-for-software-renderer ^
+	-DCMAKE_CXX_COMPILER:STRING="%llvm_dir%/bin/clang++.exe" ^
+	-DCMAKE_MAKE_PROGRAM:FILEPATH="%llvm_dir%/bin/mingw32-make.exe" ^
+	-DCMAKE_C_COMPILER:STRING="%llvm_dir%/bin/clang.exe" ^
+	-DCMAKE_CXX_FLAGS:STRING="%cflags%" ^
+	-DCMAKE_C_FLAGS:STRING="%cflags%" ^
+	-DCMAKE_CXX_STANDARD_LIBRARIES:STRING="%ldlibrary%" ^
+	-DCMAKE_C_STANDARD_LIBRARIES:STRING="%ldlibrary%" ^
+	-DCMAKE_STATIC_LINKER_FLAGS:STRING="%ldflags%" ^
+	-DCMAKE_EXE_LINKER_FLAGS:STRING="%ldflags%" ^
+	-DCMAKE_INSTALL_PREFIX:PATH="%install_dir%"
+if %errorlevel% neq 0 goto my_error
+call :my_sleep
 
-![Architecture Overview](https://slint.dev/resources/architecture.drawio.svg)
+echo "Run cmake build [%cmake_exe% --build %build_dir%]"
+%cmake_exe% --build %build_dir%
+if %errorlevel% neq 0 goto my_error
+call :my_sleep
 
-### Compiler
+echo "Run install [%cmake_exe% --install %build_dir%]"
+%cmake_exe% --install %build_dir%
+if %errorlevel% neq 0 goto my_error
+goto my_success
 
-The `.slint` files are compiled ahead of time. The expressions in the `.slint`
-are pure functions that the compiler can optimize. For example, the compiler
-could choose to "inline" properties and remove those that are constant or
-unchanged. In the future we hope to improve rendering time on low end devices by
-pre-processing images and text. The compiler could determine that a `Text` or an
-`Image` element is always on top of another `Image` in the same location.
-Consequently both elements could be rendered ahead of time into a single
-element, thus cutting down on rendering time.
+:my_sleep
+rem echo "wait 1s ..."
+ping 127.0.0.1 -n 2 > nul
+goto :eof
 
-The compiler uses the typical compiler phases of lexing, parsing, optimization,
-and finally code generation. It provides different back-ends for code generation
-in the target language. The C++ code generator produces a C++ header file, the
-Rust generator produces Rust code, and so on. An interpreter for dynamic
-languages is also included.
+:my_success
+echo "Build success!"
+goto :eof
 
-### Runtime
+:my_error
+echo "Build failed!"
+goto :eof
+```
 
-The runtime library consists of an engine that supports properties declared in
-the `.slint` language. Components with their elements, items, and properties are
-laid out in a single memory region, to reduce memory allocations.
 
-Rendering backends and styles are configurable at compile time:
 
-- The `femtovg` renderer uses OpenGL ES 2.0 for rendering.
-- The `skia` renderer uses [Skia](https://skia.org) for rendering.
-- The `software` renderer uses the CPU with no additional dependencies.
+## Hello World
 
-NOTE: When Qt is installed on the system, the `qt` style becomes available,
-using Qt's QStyle to achieve native looking widgets.
-
-### Tooling
-
-We have a few tools to help with the development of .slint files:
-
-- A [**LSP Server**](./tools/lsp) that adds features like auto-complete and live
-  preview of the .slint files to many editors.
-- It is bundled in a [**Visual Studio Code Extension**](./editors/vscode)
-  available from the market place.
-- A [**slint-viewer**](./tools/viewer) tool which displays the .slint files. The
-  `--auto-reload` argument makes it easy to preview your UI while you are
-  working on it (when using the LSP preview is not possible).
-- [**SlintPad**](https://slintpad.com/), an online editor to try out .slint syntax
-  without installing anything ([sources](./tools/slintpad)).
-- An [**updater**](./tools/updater) to convert the .slint files from
-  previous versions to newer versions.
-- An experimental [**Figma importer**](./tools/figma_import).
-
-Please check our [Editors README](./editors/README.md) for tips on how to
-configure your favorite editor to work well with Slint.
-
-## License
-
-You can use Slint under ***any*** of the following licenses, at your choice:
-
-1. [Royalty-free license](LICENSES/LicenseRef-Slint-Royalty-free-1.1.md),
-2. [GNU GPLv3](LICENSES/GPL-3.0-only.txt),
-3. [Paid license](https://slint.dev/pricing.html).
-
-See also the [Licensing FAQ](FAQ.md#licensing)
-
-## Contributions
-
-We welcome your contributions: in the form of code, bug reports or feedback.
-
-- If you see an [RFC tag](https://github.com/slint-ui/slint/labels/rfc) on an
-  issue, feel free to chime in.
-- For contribution guidelines see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Frequently Asked Questions
-
-Please see our separate [FAQ](FAQ.md).
-
-## About us (SixtyFPS GmbH)
-
-We are passionate about software - API design, cross-platform software
-development and user interface components. Our aim is to make developing user
-interfaces fun for everyone: from JavaScript, C++, or Rust developers all the
-way to UI/UX designers. We believe that software grows organically and keeping
-it open source is the best way to sustain that growth. Our team members are
-located remotely in Germany.
-
-### Stay up to date
-
-- Follow [@slint-ui](https://twitter.com/slint_ui) on X/Twitter.
-- Follow [@slint@fosstodon.org](https://mastodon.social/@slint@fosstodon.org) on Mastodon.
-- Follow [@slint-ui](https://www.linkedin.com/company/slint-ui/) on LinkedIn.
-
-### Contact us
-
-Feel free to join [Github discussions](https://github.com/slint-ui/slint/discussions)
-for general chat or questions. Use [Github issues](https://github.com/slint-ui/slint/issues)
-to report public suggestions or bugs.
-
-We chat in [our Mattermost instance](https://chat.slint.dev) where you are
-welcome to listen in or ask your questions.
-
-You can of course also contact us privately via email to [info@slint.dev](mailto://info@slint.dev).
-
-[#1]: https://www.youtube.com/watch?v=_BDbNHrjK7g
-[#2]: https://www.youtube.com/watch?v=NNNOJJsOAis
-[#3]: https://www.youtube.com/watch?v=dkBwNocItGs
-[#4]: https://slint.dev/resources/gallery_win_screenshot.png "Gallery"
-[#5]: https://slint.dev/resources/gallery_mac_screenshot.png "Gallery"
-[#6]: https://slint.dev/resources/gallery_linux_screenshot.png "Gallery"
-[#7]: https://slint.dev/resources/printerdemo_screenshot.png "Printer Demo"
-[#8]: https://slint.dev/demos/printerdemo/
-[#9]: https://slint.dev/resources/puzzle_screenshot.png "Slide Puzzle"
-[#10]: https://slint.dev/demos/slide_puzzle/
-[#11]: https://slint.dev/resources/energy-monitor-screenshot.png "Energy Monitor Demo"
-[#12]: https://slint.dev/demos/energy-monitor/
-[#13]: https://slint.dev/resources/gallery_screenshot.png "Gallery Demo"
-[#14]: https://slint.dev/demos/gallery/
-[#15]: https://slint.dev/docs/cpp
-[#16]: https://slint.dev/docs/tutorial/cpp
-[#17]: https://github.com/slint-ui/slint-cpp-template
-[#18]: https://img.shields.io/crates/v/slint
-[#19]: https://crates.io/crates/slint
-[#20]: https://slint.dev/docs/rust/slint/
-[#21]: https://slint.dev/docs/tutorial/rust
-[#22]: https://youtu.be/WBcv4V-whHk
-[#23]: https://github.com/slint-ui/slint-rust-template
-[#24]: https://img.shields.io/npm/v/slint-ui
-[#25]: https://www.npmjs.com/package/slint-ui
-[#26]: https://slint.dev/docs/node
-[#27]: https://slint.dev/docs/tutorial/node
-[#28]: https://github.com/slint-ui/slint-nodejs-template
+* [Slint-cpp Static Hello World](https://github.com/WHJWNAVY/slint-cpp-static-template)
