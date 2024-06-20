@@ -4,14 +4,40 @@ set cur_path=%cd%
 set cmake_exe=cmake.exe
 set upx_exe=upx.exe
 
-set llvm_dir=C:/LLVM-MinGW/ucrt
-set strip_exe=%llvm_dir%/bin/llvm-strip.exe
+rem gcc or llvm
+set cc_type=llvm
+
+if "%cc_type%" == "gcc" (
+	rem gcc:WinLibs
+	set cc_dir=C:\WinLibs\ucrt\bin
+	set strip_name=strip.exe
+	set cxx_name=g++.exe
+	set cc_name=gcc.exe
+	set make_name=mingw32-make.exe
+) else (
+	rem llvm:WinLibs
+	set cc_dir=C:\WinLibs\ucrt\bin
+	set strip_name=llvm-strip.exe
+	set cxx_name=clang++.exe
+	set cc_name=clang.exe
+	set make_name=mingw32-make.exe
+)
+set strip_exe=%cc_dir%/%strip_name%
+set cxx_compiler=%cc_dir%/%cxx_name%
+set cc_compiler=%cc_dir%/%cc_name%
+set make_program=%cc_dir%/%make_name%
+echo "cc_dir = [%cc_dir%]"
+echo "cc_compiler = [%cc_compiler%]"
 
 set build_dir=my_build
 set install_dir=my_install
 
 set cflags=-Os -flto -DNDEBUG -ffunction-sections -fdata-sections
 set ldlibrary=-lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -lcomctl32 -liphlpapi -lws2_32 -lntoskrnl -lbcrypt -lopengl32 -luiautomationcore -lpropsys -ldwmapi -limm32 -luxtheme -luserenv
+
+echo "cflags = [%cflags%]"
+echo "ldlibrary = [%ldlibrary%]"
+
 set ldflags=-Os -DNDEBUG -Wl,-subsystem,windows -Wl,--gc-sections
 
 echo "Del build cache"
@@ -31,9 +57,9 @@ echo "Run cmake generator"
 	-DSLINT_FEATURE_RENDERER_SOFTWARE:BOOL=ON ^
 	-DRust_CARGO_TARGET=x86_64-pc-windows-gnu ^
 	-DDEFAULT_SLINT_EMBED_RESOURCES:STRING=embed-for-software-renderer ^
-	-DCMAKE_CXX_COMPILER:STRING="%llvm_dir%/bin/clang++.exe" ^
-	-DCMAKE_MAKE_PROGRAM:FILEPATH="%llvm_dir%/bin/mingw32-make.exe" ^
-	-DCMAKE_C_COMPILER:STRING="%llvm_dir%/bin/clang.exe" ^
+	-DCMAKE_CXX_COMPILER:STRING="%cxx_compiler%" ^
+	-DCMAKE_MAKE_PROGRAM:FILEPATH="%make_program%" ^
+	-DCMAKE_C_COMPILER:STRING="%cc_compiler%" ^
 	-DCMAKE_CXX_FLAGS:STRING="%cflags%" ^
 	-DCMAKE_C_FLAGS:STRING="%cflags%" ^
 	-DCMAKE_CXX_STANDARD_LIBRARIES:STRING="%ldlibrary%" ^
