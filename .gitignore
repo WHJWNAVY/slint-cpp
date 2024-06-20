@@ -18,3 +18,5 @@ docs/reference/src/language/builtins/structs.md
 
 .env
 __pycache__
+/my_build/
+/my_install/
