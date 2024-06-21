@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 import * as napi from "./rust-module.cjs";
 export {
@@ -350,7 +350,7 @@ export class ArrayModel<T> extends Model<T> {
 
     /**
      * Removes the last element from the array and returns it.
-     * 
+     *
      * @returns The removed element or undefined if the array is empty.
      */
     pop(): T | undefined {
@@ -780,6 +780,23 @@ function loadSlint(loadData: LoadData): Object {
                 }
             });
 
+            instance!.definition().functions.forEach((cb) => {
+                let functionName = cb.replace(/-/g, "_");
+
+                if (componentHandle[functionName] !== undefined) {
+                    console.warn("Duplicated function name " + functionName);
+                } else {
+                    Object.defineProperty(componentHandle, cb.replace(/-/g, "_"), {
+                        get() {
+                            return function () {
+                                return instance!.invoke(cb, Array.from(arguments));
+                            };
+                        },
+                        enumerable: true,
+                    });
+                }
+            });
+
             // globals
             instance!.definition().globals.forEach((globalName) => {
                 if (componentHandle[globalName] !== undefined) {
@@ -819,6 +836,23 @@ function loadSlint(loadData: LoadData): Object {
                                 },
                                 set(callback) {
                                     instance!.setGlobalCallback(globalName, cb, callback);
+                                },
+                                enumerable: true,
+                            });
+                        }
+                    });
+
+                    instance!.definition().globalFunctions(globalName).forEach((cb) => {
+                        let functionName = cb.replace(/-/g, "_");
+
+                        if (globalObject[functionName] !== undefined) {
+                            console.warn("Duplicated function name " + cb + " on global " + global);
+                        } else {
+                            Object.defineProperty(globalObject, cb.replace(/-/g, "_"), {
+                                get() {
+                                    return function () {
+                                        return instance!.invokeGlobal(globalName, cb, Array.from(arguments));
+                                    };
                                 },
                                 enumerable: true,
                             });
@@ -1039,4 +1073,6 @@ export namespace private_api {
     ) {
         component.component_instance.sendKeyboardStringSequence(s);
     }
+
+    export import initTesting = napi.initTesting;
 }

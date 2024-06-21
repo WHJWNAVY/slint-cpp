@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 /*!
 This crate serves as a companion crate of the slint crate.
@@ -17,11 +17,11 @@ In your Cargo.toml:
 build = "build.rs"
 
 [dependencies]
-slint = "1.5.0"
+slint = "1.6.0"
 ...
 
 [build-dependencies]
-slint-build = "1.5.0"
+slint-build = "1.6.0"
 ```
 
 In the `build.rs` file:
@@ -374,7 +374,7 @@ pub fn compile_with_config(
     let syntax_node = syntax_node.expect("diags contained no compilation errors");
 
     // 'spin_on' is ok here because the compiler in single threaded and does not block if there is no blocking future
-    let (doc, diag, _) =
+    let (doc, diag, loader) =
         spin_on::spin_on(i_slint_compiler::compile_syntax_node(syntax_node, diag, compiler_config));
 
     if diag.has_error() {
@@ -393,7 +393,7 @@ pub fn compile_with_config(
 
     let file = std::fs::File::create(&output_file_path).map_err(CompileError::SaveError)?;
     let mut code_formatter = CodeFormatter::new(BufWriter::new(file));
-    let generated = i_slint_compiler::generator::rust::generate(&doc);
+    let generated = i_slint_compiler::generator::rust::generate(&doc, &loader.compiler_config);
 
     for x in &diag.all_loaded_files {
         if x.is_absolute() {
@@ -411,7 +411,7 @@ pub fn compile_with_config(
     write!(code_formatter, "{}", generated).map_err(CompileError::SaveError)?;
     println!("cargo:rerun-if-changed={}", path.display());
 
-    for resource in doc.root_component.embedded_file_resources.borrow().keys() {
+    for resource in doc.embedded_file_resources.borrow().keys() {
         if !resource.starts_with("builtin:") {
             println!("cargo:rerun-if-changed={}", resource);
         }
@@ -421,6 +421,7 @@ pub fn compile_with_config(
     println!("cargo:rerun-if-env-changed=SLINT_SCALE_FACTOR");
     println!("cargo:rerun-if-env-changed=SLINT_ASSET_SECTION");
     println!("cargo:rerun-if-env-changed=SLINT_EMBED_RESOURCES");
+    println!("cargo:rerun-if-env-changed=SLINT_EMIT_DEBUG_INFO");
 
     println!("cargo:rustc-env=SLINT_INCLUDE_GENERATED={}", output_file_path.display());
 

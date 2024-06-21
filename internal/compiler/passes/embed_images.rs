@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use crate::diagnostics::BuildDiagnostics;
 use crate::embedded_resources::*;
@@ -15,23 +15,21 @@ use std::pin::Pin;
 use std::rc::Rc;
 
 pub async fn embed_images(
-    component: &Rc<Component>,
+    doc: &Document,
     embed_files: EmbedResourcesKind,
     scale_factor: f64,
     resource_url_mapper: &Option<Rc<dyn Fn(&str) -> Pin<Box<dyn Future<Output = Option<String>>>>>>,
     diag: &mut BuildDiagnostics,
 ) {
-    let global_embedded_resources = &component.embedded_file_resources;
+    if embed_files == EmbedResourcesKind::Nothing {
+        return;
+    }
 
-    let all_components = component
-        .used_types
-        .borrow()
-        .sub_components
-        .iter()
-        .chain(component.used_types.borrow().globals.iter())
-        .chain(std::iter::once(component))
-        .cloned()
-        .collect::<Vec<_>>();
+    let global_embedded_resources = &doc.embedded_file_resources;
+
+    let mut all_components = Vec::new();
+    doc.visit_all_used_components(|c| all_components.push(c.clone()));
+    let all_components = all_components;
 
     let mapped_urls = {
         let mut urls = HashMap::<String, Option<String>>::new();

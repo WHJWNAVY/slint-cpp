@@ -1,4 +1,5 @@
-<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial -->
+<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0 -->
+
 # Slint
 
 [![Crates.io](https://img.shields.io/crates/v/slint)](https://crates.io/crates/slint)
@@ -23,7 +24,7 @@ In your `Cargo.toml` add:
 
 ```toml
 [dependencies]
-slint = "1.5.0"
+slint = "1.6.0"
 ```
 
 And in your `main.rs`:

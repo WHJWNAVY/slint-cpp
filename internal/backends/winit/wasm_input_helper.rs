@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Helper for wasm that adds a hidden `<input>`  and process its events
 //!
@@ -270,9 +270,9 @@ impl WasmInputHelper {
             crate::event_loop::GLOBAL_PROXY.with(|global_proxy| {
                 if let Ok(mut x) = global_proxy.try_borrow_mut() {
                     if let Some(proxy) = &mut *x {
-                        let _ = proxy.send_event(crate::SlintUserEvent::CustomEvent {
-                            event: crate::event_loop::CustomEvent::WakeEventLoopWorkaround,
-                        });
+                        let _ = proxy.send_event(crate::SlintUserEvent(
+                            crate::event_loop::CustomEvent::WakeEventLoopWorkaround,
+                        ));
                     }
                 }
             });

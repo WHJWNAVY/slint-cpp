@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 /*!
 This module contains the [`NamedReference`] and its helper
@@ -40,6 +40,9 @@ impl std::fmt::Debug for NamedReference {
 impl NamedReference {
     pub fn new(element: &ElementRc, name: &str) -> Self {
         Self(NamedReferenceInner::from_name(element, name))
+    }
+    pub(crate) fn snapshot(&self, snapshotter: &mut crate::typeloader::Snapshotter) -> Self {
+        NamedReference(Rc::new(self.0.snapshot(snapshotter)))
     }
     pub fn name(&self) -> &str {
         &self.0.name
@@ -177,6 +180,16 @@ impl NamedReferenceInner {
         result.check_invariant();
         result
     }
+
+    pub(crate) fn snapshot(&self, snapshotter: &mut crate::typeloader::Snapshotter) -> Self {
+        let element = if let Some(el) = self.element.upgrade() {
+            Rc::downgrade(&snapshotter.snapshot_element(&el))
+        } else {
+            std::rc::Weak::default()
+        };
+
+        Self { element, name: self.name.clone() }
+    }
 }
 
 /// Must be put inside the Element and owns all the NamedReferenceInner
@@ -192,6 +205,19 @@ impl NamedReferenceContainer {
         } else {
             false
         }
+    }
+
+    pub(crate) fn snapshot(
+        &self,
+        snapshotter: &mut crate::typeloader::Snapshotter,
+    ) -> NamedReferenceContainer {
+        let inner = self
+            .0
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k.clone(), Rc::new(v.snapshot(snapshotter))))
+            .collect();
+        NamedReferenceContainer(RefCell::new(inner))
     }
 }
 

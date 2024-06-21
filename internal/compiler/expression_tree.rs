@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use crate::diagnostics::{BuildDiagnostics, SourceLocation, Spanned};
 use crate::langtype::{BuiltinElement, EnumerationValue, Type};
@@ -38,6 +38,7 @@ pub enum BuiltinFunction {
     Log,
     Pow,
     SetFocusItem,
+    ClearFocusItem,
     ShowPopupWindow,
     ClosePopupWindow,
     SetSelectionOffsets,
@@ -48,6 +49,7 @@ pub enum BuiltinFunction {
     /// the "42".is_float()
     StringIsFloat,
     ColorRgbaStruct,
+    ColorHsvaStruct,
     ColorBrighter,
     ColorDarker,
     ColorTransparentize,
@@ -56,7 +58,15 @@ pub enum BuiltinFunction {
     ImageSize,
     ArrayLength,
     Rgb,
-    DarkColorScheme,
+    Hsv,
+    ColorScheme,
+    Use24HourFormat,
+    MonthDayCount,
+    MonthOffset,
+    FormatDate,
+    DateNow,
+    ValidDate,
+    ParseDate,
     TextInputFocused,
     SetTextInputFocused,
     ImplicitLayoutInfo(Orientation),
@@ -82,10 +92,13 @@ pub enum BuiltinMacroFunction {
     Clamp,
     /// Add the right conversion operations so that the return type is the same as the argument type
     Mod,
+    /// Add the right conversion operations so that the return type is the same as the argument type
+    Abs,
     CubicBezier,
     /// The argument can be r,g,b,a or r,g,b and they can be percentages or integer.
     /// transform the argument so it is always rgb(r, g, b, a) with r, g, b between 0 and 255.
     Rgb,
+    Hsv,
     /// transform `debug(a, b, c)` into debug `a + " " + b + " " + c`
     Debug,
 }
@@ -130,6 +143,10 @@ impl BuiltinFunction {
                 return_type: Box::new(Type::Void),
                 args: vec![Type::ElementReference],
             },
+            BuiltinFunction::ClearFocusItem => Type::Function {
+                return_type: Box::new(Type::Void),
+                args: vec![Type::ElementReference],
+            },
             BuiltinFunction::ShowPopupWindow | BuiltinFunction::ClosePopupWindow => {
                 Type::Function {
                     return_type: Box::new(Type::Void),
@@ -161,6 +178,21 @@ impl BuiltinFunction {
                         ("green".to_string(), Type::Int32),
                         ("blue".to_string(), Type::Int32),
                         ("alpha".to_string(), Type::Int32),
+                    ])
+                    .collect(),
+                    name: Some("Color".into()),
+                    node: None,
+                    rust_attributes: None,
+                }),
+                args: vec![Type::Color],
+            },
+            BuiltinFunction::ColorHsvaStruct => Type::Function {
+                return_type: Box::new(Type::Struct {
+                    fields: IntoIterator::into_iter([
+                        ("hue".to_string(), Type::Float32),
+                        ("saturation".to_string(), Type::Float32),
+                        ("value".to_string(), Type::Float32),
+                        ("alpha".to_string(), Type::Float32),
                     ])
                     .collect(),
                     name: Some("Color".into()),
@@ -209,12 +241,43 @@ impl BuiltinFunction {
                 return_type: Box::new(Type::Color),
                 args: vec![Type::Int32, Type::Int32, Type::Int32, Type::Float32],
             },
-            BuiltinFunction::DarkColorScheme => {
-                Type::Function { return_type: Box::new(Type::Bool), args: vec![] }
-            }
+            BuiltinFunction::Hsv => Type::Function {
+                return_type: Box::new(Type::Color),
+                args: vec![Type::Float32, Type::Float32, Type::Float32, Type::Float32],
+            },
+            BuiltinFunction::ColorScheme => Type::Function {
+                return_type: Box::new(Type::Enumeration(
+                    crate::typeregister::BUILTIN_ENUMS.with(|e| e.ColorScheme.clone()),
+                )),
+                args: vec![],
+            },
+            BuiltinFunction::MonthDayCount => Type::Function {
+                return_type: Box::new(Type::Int32),
+                args: vec![Type::Int32, Type::Int32],
+            },
+            BuiltinFunction::MonthOffset => Type::Function {
+                return_type: Box::new(Type::Int32),
+                args: vec![Type::Int32, Type::Int32],
+            },
+            BuiltinFunction::FormatDate => Type::Function {
+                return_type: Box::new(Type::String),
+                args: vec![Type::String, Type::Int32, Type::Int32, Type::Int32],
+            },
             BuiltinFunction::TextInputFocused => {
                 Type::Function { return_type: Box::new(Type::Bool), args: vec![] }
             }
+            BuiltinFunction::DateNow => Type::Function {
+                return_type: Box::new(Type::Array(Box::new(Type::Int32))),
+                args: vec![],
+            },
+            BuiltinFunction::ValidDate => Type::Function {
+                return_type: Box::new(Type::Bool),
+                args: vec![Type::String, Type::String],
+            },
+            BuiltinFunction::ParseDate => Type::Function {
+                return_type: Box::new(Type::Array(Box::new(Type::Int32))),
+                args: vec![Type::String, Type::String],
+            },
             BuiltinFunction::SetTextInputFocused => {
                 Type::Function { return_type: Box::new(Type::Void), args: vec![Type::Bool] }
             }
@@ -241,6 +304,9 @@ impl BuiltinFunction {
                     Type::Array(Type::String.into()),
                 ],
             },
+            BuiltinFunction::Use24HourFormat => {
+                Type::Function { return_type: Box::new(Type::Bool), args: vec![] }
+            }
         }
     }
 
@@ -250,7 +316,13 @@ impl BuiltinFunction {
             BuiltinFunction::GetWindowScaleFactor => false,
             BuiltinFunction::GetWindowDefaultFontSize => false,
             BuiltinFunction::AnimationTick => false,
-            BuiltinFunction::DarkColorScheme => false,
+            BuiltinFunction::ColorScheme => false,
+            BuiltinFunction::MonthDayCount => false,
+            BuiltinFunction::MonthOffset => false,
+            BuiltinFunction::FormatDate => false,
+            BuiltinFunction::DateNow => false,
+            BuiltinFunction::ValidDate => false,
+            BuiltinFunction::ParseDate => false,
             // Even if it is not pure, we optimize it away anyway
             BuiltinFunction::Debug => true,
             BuiltinFunction::Mod
@@ -267,12 +339,13 @@ impl BuiltinFunction {
             | BuiltinFunction::Log
             | BuiltinFunction::Pow
             | BuiltinFunction::ATan => true,
-            BuiltinFunction::SetFocusItem => false,
+            BuiltinFunction::SetFocusItem | BuiltinFunction::ClearFocusItem => false,
             BuiltinFunction::ShowPopupWindow | BuiltinFunction::ClosePopupWindow => false,
             BuiltinFunction::SetSelectionOffsets => false,
             BuiltinFunction::ItemMemberFunction(..) => false,
             BuiltinFunction::StringToFloat | BuiltinFunction::StringIsFloat => true,
             BuiltinFunction::ColorRgbaStruct
+            | BuiltinFunction::ColorHsvaStruct
             | BuiltinFunction::ColorBrighter
             | BuiltinFunction::ColorDarker
             | BuiltinFunction::ColorTransparentize
@@ -288,6 +361,7 @@ impl BuiltinFunction {
             BuiltinFunction::ImageSize => false,
             BuiltinFunction::ArrayLength => true,
             BuiltinFunction::Rgb => true,
+            BuiltinFunction::Hsv => true,
             BuiltinFunction::SetTextInputFocused => false,
             BuiltinFunction::TextInputFocused => false,
             BuiltinFunction::ImplicitLayoutInfo(_) => false,
@@ -296,6 +370,7 @@ impl BuiltinFunction {
             | BuiltinFunction::RegisterCustomFontByMemory
             | BuiltinFunction::RegisterBitmapFont => false,
             BuiltinFunction::Translate => false,
+            BuiltinFunction::Use24HourFormat => false,
         }
     }
 
@@ -305,7 +380,13 @@ impl BuiltinFunction {
             BuiltinFunction::GetWindowScaleFactor => true,
             BuiltinFunction::GetWindowDefaultFontSize => true,
             BuiltinFunction::AnimationTick => true,
-            BuiltinFunction::DarkColorScheme => true,
+            BuiltinFunction::ColorScheme => true,
+            BuiltinFunction::MonthDayCount => true,
+            BuiltinFunction::MonthOffset => true,
+            BuiltinFunction::FormatDate => true,
+            BuiltinFunction::DateNow => true,
+            BuiltinFunction::ValidDate => true,
+            BuiltinFunction::ParseDate => true,
             // Even if it has technically side effect, we still consider it as pure for our purpose
             BuiltinFunction::Debug => true,
             BuiltinFunction::Mod
@@ -322,12 +403,13 @@ impl BuiltinFunction {
             | BuiltinFunction::Log
             | BuiltinFunction::Pow
             | BuiltinFunction::ATan => true,
-            BuiltinFunction::SetFocusItem => false,
+            BuiltinFunction::SetFocusItem | BuiltinFunction::ClearFocusItem => false,
             BuiltinFunction::ShowPopupWindow | BuiltinFunction::ClosePopupWindow => false,
             BuiltinFunction::SetSelectionOffsets => false,
             BuiltinFunction::ItemMemberFunction(..) => false,
             BuiltinFunction::StringToFloat | BuiltinFunction::StringIsFloat => true,
             BuiltinFunction::ColorRgbaStruct
+            | BuiltinFunction::ColorHsvaStruct
             | BuiltinFunction::ColorBrighter
             | BuiltinFunction::ColorDarker
             | BuiltinFunction::ColorTransparentize
@@ -336,6 +418,7 @@ impl BuiltinFunction {
             BuiltinFunction::ImageSize => true,
             BuiltinFunction::ArrayLength => true,
             BuiltinFunction::Rgb => true,
+            BuiltinFunction::Hsv => true,
             BuiltinFunction::ImplicitLayoutInfo(_) => true,
             BuiltinFunction::ItemAbsolutePosition => true,
             BuiltinFunction::SetTextInputFocused => false,
@@ -344,6 +427,7 @@ impl BuiltinFunction {
             | BuiltinFunction::RegisterCustomFontByMemory
             | BuiltinFunction::RegisterBitmapFont => false,
             BuiltinFunction::Translate => true,
+            BuiltinFunction::Use24HourFormat => true,
         }
     }
 }
@@ -1033,7 +1117,10 @@ impl Expression {
             }
             Expression::BinaryExpression { lhs, rhs, .. } => lhs.is_constant() && rhs.is_constant(),
             Expression::UnaryOp { sub, .. } => sub.is_constant(),
-            Expression::Array { values, .. } => values.iter().all(Expression::is_constant),
+            // Array will turn into model, and they can't be considered as constant if the model
+            // is used and the model is changed. CF issue #5249
+            //Expression::Array { values, .. } => values.iter().all(Expression::is_constant),
+            Expression::Array { .. } => false,
             Expression::Struct { values, .. } => values.iter().all(|(_, v)| v.is_constant()),
             Expression::PathData(data) => match data {
                 Path::Elements(elements) => elements
@@ -1453,7 +1540,7 @@ impl BindingExpression {
     /// Returns true if the other expression was taken
     pub fn merge_with(&mut self, other: &Self) -> bool {
         if self.animation.is_none() {
-            self.animation = other.animation.clone();
+            self.animation.clone_from(&other.animation);
         }
         let has_binding = self.has_binding();
         self.two_way_bindings.extend_from_slice(&other.two_way_bindings);

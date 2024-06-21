@@ -3,7 +3,7 @@
 
 [package]
 name = "uefi-demo"
-version = "1.5.1"
+version = "1.7.0"
 edition = "2021"
 license = "MIT"
 build = "build.rs"
@@ -16,6 +16,7 @@ name = "uefi-demo"
 [dependencies]
 uefi = "0.20.0"
 uefi-services = "0.17.0"
+minipng = "=0.1.1"
 
 slint = { path = "../../api/rs/slint", default-features = false, features = [
     "compat-1-2",
@@ -24,6 +25,7 @@ slint = { path = "../../api/rs/slint", default-features = false, features = [
     "log",
     "unsafe-single-threaded",
 ] }
+log = "0.4.21"
 
 [build-dependencies]
 slint-build = { path = "../../api/rs/build" }

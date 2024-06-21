@@ -1,12 +1,12 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use std::cell::RefCell;
 #[cfg(not(feature = "libseat"))]
 use std::fs::OpenOptions;
-use std::os::fd::{AsFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::fd::OwnedFd;
 #[cfg(feature = "libseat")]
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd};
 #[cfg(not(feature = "libseat"))]
 use std::os::unix::fs::OpenOptionsExt;
 use std::rc::Rc;
@@ -99,13 +99,15 @@ impl Backend {
             Some("skia-software") => crate::renderer::skia::SkiaRendererAdapter::new_software,
             #[cfg(feature = "renderer-femtovg")]
             Some("femtovg") => crate::renderer::femtovg::FemtoVGRendererAdapter::new,
-            None => crate::renderer::try_skia_then_femtovg,
+            #[cfg(feature = "renderer-software")]
+            Some("software") => crate::renderer::sw::SoftwareRendererAdapter::new,
+            None => crate::renderer::try_skia_then_femtovg_then_software,
             Some(renderer_name) => {
                 eprintln!(
                     "slint linuxkms backend: unrecognized renderer {}, falling back default",
                     renderer_name
                 );
-                crate::renderer::try_skia_then_femtovg
+                crate::renderer::try_skia_then_femtovg_then_software
             }
         };
 
@@ -300,16 +302,5 @@ impl i_slint_core::platform::Platform for Backend {
 
 #[derive(Default)]
 pub struct LoopData {}
-
-struct Device {
-    // in the future, use this from libseat: device_id: i32,
-    fd: RawFd,
-}
-
-impl AsFd for Device {
-    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
-    }
-}
 
 pub type EventLoopHandle<'a> = calloop::LoopHandle<'a, LoopData>;

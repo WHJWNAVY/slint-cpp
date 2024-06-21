@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #pragma once
 
@@ -74,7 +74,10 @@ public:
     float scale_factor() const { return slint_windowrc_get_scale_factor(&inner); }
     void set_scale_factor(float value) const { slint_windowrc_set_scale_factor(&inner, value); }
 
-    bool dark_color_scheme() const { return slint_windowrc_dark_color_scheme(&inner); }
+    cbindgen_private::ColorScheme color_scheme() const
+    {
+        return slint_windowrc_color_scheme(&inner);
+    }
 
     bool text_input_focused() const { return slint_windowrc_get_text_input_focused(&inner); }
     void set_text_input_focused(bool value) const
@@ -90,17 +93,16 @@ public:
                 items, &inner);
     }
 
-    void set_focus_item(const ItemTreeRc &component_rc, uint32_t item_index)
+    void set_focus_item(const ItemTreeRc &component_rc, uint32_t item_index, bool set_focus)
     {
         cbindgen_private::ItemRc item_rc { component_rc, item_index };
-        cbindgen_private::slint_windowrc_set_focus_item(&inner, &item_rc);
+        cbindgen_private::slint_windowrc_set_focus_item(&inner, &item_rc, set_focus);
     }
 
-    template<typename Component>
-    void set_component(const Component &c) const
+    void set_component(const cbindgen_private::ItemTreeWeak &weak) const
     {
-        auto self_rc = (*c.self_weak.lock()).into_dyn();
-        slint_windowrc_set_component(&inner, &self_rc);
+        auto item_tree_rc = (*weak.lock()).into_dyn();
+        slint_windowrc_set_component(&inner, &item_tree_rc);
     }
 
     template<typename Component, typename Parent>
@@ -216,6 +218,11 @@ public:
     inline void register_bitmap_font(const cbindgen_private::BitmapFont &font)
     {
         cbindgen_private::slint_register_bitmap_font(&inner, &font);
+    }
+
+    inline float default_font_size() const
+    {
+        return cbindgen_private::slint_windowrc_default_font_size(&inner);
     }
 
     /// \private

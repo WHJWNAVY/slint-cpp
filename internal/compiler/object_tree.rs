@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 /*!
  This module contains the intermediate representation of the code in the form of an object tree
@@ -50,6 +50,14 @@ pub struct Document {
     /// startup for custom font use.
     pub custom_fonts: Vec<(String, crate::parser::SyntaxToken)>,
     pub exports: Exports,
+
+    /// Map of resources that should be embedded in the generated code, indexed by their absolute path on
+    /// disk on the build system
+    pub embedded_file_resources:
+        RefCell<HashMap<String, crate::embedded_resources::EmbeddedResources>>,
+
+    /// The list of used extra types used recursively.
+    pub used_types: RefCell<UsedSubTypes>,
 }
 
 impl Document {
@@ -245,6 +253,20 @@ impl Document {
             local_registry,
             custom_fonts,
             exports,
+            embedded_file_resources: Default::default(),
+            used_types: Default::default(),
+        }
+    }
+
+    /// visit all root and used component (including globals)
+    pub fn visit_all_used_components(&self, mut v: impl FnMut(&Rc<Component>)) {
+        let used_types = self.used_types.borrow();
+        for c in &used_types.sub_components {
+            v(c);
+        }
+        v(&self.root_component);
+        for c in &used_types.globals {
+            v(c);
         }
     }
 }
@@ -258,7 +280,7 @@ pub struct PopupWindow {
     pub parent_element: ElementRc,
 }
 
-type ChildrenInsertionPoint = (ElementRc, syntax_nodes::ChildrenPlaceholder);
+type ChildrenInsertionPoint = (ElementRc, usize, syntax_nodes::ChildrenPlaceholder);
 
 /// Used sub types for a root component
 #[derive(Debug, Default)]
@@ -318,11 +340,6 @@ pub struct Component {
     /// optimized away, but their properties may still be in use
     pub optimized_elements: RefCell<Vec<ElementRc>>,
 
-    /// Map of resources that should be embedded in the generated code, indexed by their absolute path on
-    /// disk on the build system
-    pub embedded_file_resources:
-        RefCell<HashMap<String, crate::embedded_resources::EmbeddedResources>>,
-
     /// The layout constraints of the root item
     pub root_constraints: RefCell<LayoutConstraints>,
 
@@ -332,10 +349,10 @@ pub struct Component {
 
     pub init_code: RefCell<InitCode>,
 
-    /// The list of used extra types used (recursively) by this root component.
-    /// (This only make sense on the root component)
-    pub used_types: RefCell<UsedSubTypes>,
     pub popup_windows: RefCell<Vec<PopupWindow>>,
+
+    /// This component actually inherits PopupWindow (although that has been changed to a Window by the lower_popups pass)
+    pub inherits_popup_window: Cell<bool>,
 
     /// The names under which this component should be accessible
     /// if it is a global singleton and exported.
@@ -380,7 +397,12 @@ impl Component {
         let c = Rc::new(c);
         let weak = Rc::downgrade(&c);
         recurse_elem(&c.root_element, &(), &mut |e, _| {
-            e.borrow_mut().enclosing_component = weak.clone()
+            e.borrow_mut().enclosing_component = weak.clone();
+            if let Some(qualified_id) =
+                e.borrow_mut().debug.first_mut().and_then(|x| x.qualified_id.as_mut())
+            {
+                *qualified_id = format!("{}::{}", c.id, qualified_id);
+            }
         });
         c
     }
@@ -586,6 +608,34 @@ impl GeometryProps {
 
 pub type BindingsMap = BTreeMap<String, RefCell<BindingExpression>>;
 
+#[derive(Clone)]
+pub struct ElementDebugInfo {
+    // The id qualified with the enclosing component name. Given `foo := Bar {}` this is `EnclosingComponent::foo`
+    pub qualified_id: Option<String>,
+    pub type_name: String,
+    pub node: syntax_nodes::Element,
+    // Field to indicate wether this element was a layout that had
+    // been lowered into a rectangle in the lower_layouts pass.
+    pub layout: Option<crate::layout::Layout>,
+    /// Set to true if the ElementDebugInfo following this one in the debug vector
+    /// in Element::debug is the last one and the next entry belongs to an other element.
+    /// This can happen as a result of rectangle optimization, for example.
+    pub element_boundary: bool,
+}
+
+impl ElementDebugInfo {
+    // Returns a comma separate string that encodes the element type name (`Rectangle`, `MyButton`, etc.)
+    // and the qualified id (`SurroundingComponent::my-id`).
+    fn encoded_element_info(&self) -> String {
+        let mut info = self.type_name.clone();
+        info.push(',');
+        if let Some(id) = self.qualified_id.as_ref() {
+            info.push_str(id);
+        }
+        info
+    }
+}
+
 /// An Element is an instantiation of a Component
 #[derive(Default)]
 pub struct Element {
@@ -599,6 +649,7 @@ pub struct Element {
     pub base_type: ElementType,
     /// Currently contains also the callbacks. FIXME: should that be changed?
     pub bindings: BindingsMap,
+    pub change_callbacks: BTreeMap<String, RefCell<Vec<Expression>>>,
     pub property_analysis: RefCell<HashMap<String, PropertyAnalysis>>,
 
     pub children: Vec<ElementRc>,
@@ -652,21 +703,19 @@ pub struct Element {
 
     /// Debug information about this element.
     ///
-    /// Contains the AST node if available, as well as wether this element was a layout that had
-    /// been lowered into a rectangle in the lower_layouts pass.
     /// There can be several in case of inlining or optimization (child merged into their parent).
     ///
     /// The order in the list is first the parent, and then the removed children.
-    pub debug: Vec<(syntax_nodes::Element, Option<crate::layout::Layout>)>,
+    pub debug: Vec<ElementDebugInfo>,
 }
 
 impl Spanned for Element {
     fn span(&self) -> crate::diagnostics::Span {
-        self.debug.first().map(|n| n.0.span()).unwrap_or_default()
+        self.debug.first().map(|n| n.node.span()).unwrap_or_default()
     }
 
     fn source_file(&self) -> Option<&crate::diagnostics::SourceFile> {
-        self.debug.first().map(|n| &n.0.source_file)
+        self.debug.first().map(|n| &n.node.source_file)
     }
 }
 
@@ -686,6 +735,7 @@ pub fn pretty_print(
         expression_tree::pretty_print(f, &repeated.model)?;
         write!(f, ":")?;
         if let ElementType::Component(base) = &e.base_type {
+            write!(f, "(base) ")?;
             if base.parent_element.upgrade().is_some() {
                 pretty_print(f, &base.root_element.borrow(), indentation)?;
                 return Ok(());
@@ -695,7 +745,7 @@ pub fn pretty_print(
     if e.is_component_placeholder {
         write!(f, "/* Component Placeholder */ ")?;
     }
-    writeln!(f, "{} := {} {{", e.id, e.base_type)?;
+    writeln!(f, "{} := {} {{  /* {} */", e.id, e.base_type, e.element_infos())?;
     let mut indentation = indentation + 1;
     macro_rules! indent {
         () => {
@@ -731,6 +781,14 @@ pub fn pretty_print(
             writeln!(f, "{} <=> {:?};", name, nr)?;
         }
     }
+    for (name, ch) in &e.change_callbacks {
+        for ex in &*ch.borrow() {
+            indent!();
+            writeln!(f, "changed {name} => {{ ")?;
+            expression_tree::pretty_print(f, ex)?;
+            writeln!(f, "  }}")?;
+        }
+    }
     if !e.states.is_empty() {
         indent!();
         writeln!(f, "states {:?}", e.states)?;
@@ -743,7 +801,7 @@ pub fn pretty_print(
         indent!();
         pretty_print(f, &c.borrow(), indentation)?
     }
-    for g in &e.geometry_props {
+    if let Some(g) = &e.geometry_props {
         indent!();
         writeln!(f, "geometry {:?} ", g)?;
     }
@@ -897,10 +955,23 @@ impl Element {
         } else {
             tr.empty_type()
         };
+        // This isn't truly qualified yet, the enclosing component is added at the end of Component::from_node
+        let qualified_id = (!id.is_empty()).then(|| id.clone());
+        let type_name = base_type
+            .type_name()
+            .filter(|_| base_type != tr.empty_type())
+            .unwrap_or_default()
+            .to_string();
         let mut r = Element {
             id,
             base_type,
-            debug: vec![(node.clone(), None)],
+            debug: vec![ElementDebugInfo {
+                qualified_id,
+                type_name,
+                node: node.clone(),
+                layout: None,
+                element_boundary: false,
+            }],
             is_legacy_syntax,
             ..Default::default()
         };
@@ -1036,22 +1107,6 @@ impl Element {
                 sig_decl.child_token(SyntaxKind::Identifier).map_or(false, |t| t.text() == "pure"),
             );
 
-            if let Some(csn) = sig_decl.TwoWayBinding() {
-                r.bindings
-                    .insert(name.clone(), BindingExpression::new_uncompiled(csn.into()).into());
-                r.property_declarations.insert(
-                    name,
-                    PropertyDeclaration {
-                        property_type: Type::InferredCallback,
-                        node: Some(sig_decl.into()),
-                        visibility: PropertyVisibility::InOut,
-                        pure,
-                        ..Default::default()
-                    },
-                );
-                continue;
-            }
-
             let PropertyLookupResult {
                 resolved_name: existing_name,
                 property_type: maybe_existing_prop_type,
@@ -1079,6 +1134,22 @@ impl Element {
                         &sig_decl.DeclaredIdentifier(),
                     );
                 }
+                continue;
+            }
+
+            if let Some(csn) = sig_decl.TwoWayBinding() {
+                r.bindings
+                    .insert(name.clone(), BindingExpression::new_uncompiled(csn.into()).into());
+                r.property_declarations.insert(
+                    name,
+                    PropertyDeclaration {
+                        property_type: Type::InferredCallback,
+                        node: Some(sig_decl.into()),
+                        visibility: PropertyVisibility::InOut,
+                        pure,
+                        ..Default::default()
+                    },
+                );
                 continue;
             }
 
@@ -1157,12 +1228,10 @@ impl Element {
                 match token.as_token().unwrap().text() {
                     "pure" => pure = Some(true),
                     "public" => {
-                        debug_assert_eq!(visibility, PropertyVisibility::Private);
                         visibility = PropertyVisibility::Public;
                         pure = pure.or(Some(false));
                     }
                     "protected" => {
-                        debug_assert_eq!(visibility, PropertyVisibility::Private);
                         visibility = PropertyVisibility::Protected;
                         pure = pure.or(Some(false));
                     }
@@ -1283,6 +1352,38 @@ impl Element {
             }
         }
 
+        for ch in node.PropertyChangedCallback() {
+            if !diag.enable_experimental && !tr.expose_internal_types {
+                diag.push_error(
+                    "Change callbacks are experimental and not yet implemented in this version of Slint".into(),
+                    &ch,
+                );
+            }
+            let Some(prop) = parser::identifier_text(&ch.DeclaredIdentifier()) else { continue };
+            let lookup_result = r.lookup_property(&prop);
+            if lookup_result.property_visibility == PropertyVisibility::Private
+                && !lookup_result.is_local_to_component
+            {
+                diag.push_error(
+                    format!("Change callback on a private property '{prop}'"),
+                    &ch.DeclaredIdentifier(),
+                );
+            }
+            let handler = Expression::Uncompiled(ch.clone().into());
+            match r.change_callbacks.entry(prop) {
+                Entry::Vacant(e) => {
+                    e.insert(vec![handler].into());
+                }
+                Entry::Occupied(mut e) => {
+                    diag.push_error(
+                        format!("Duplicated change callback on '{}'", e.key()),
+                        &ch.DeclaredIdentifier(),
+                    );
+                    e.get_mut().get_mut().push(handler);
+                }
+            }
+        }
+
         let mut children_placeholder = None;
         let r = r.make_rc();
 
@@ -1307,7 +1408,7 @@ impl Element {
                     diag,
                     tr,
                 );
-                if let Some((_, se)) = sub_child_insertion_point {
+                if let Some((_, _, se)) = sub_child_insertion_point {
                     diag.push_error(
                         "The @children placeholder cannot appear in a repeated element".into(),
                         &se,
@@ -1324,7 +1425,7 @@ impl Element {
                     diag,
                     tr,
                 );
-                if let Some((_, se)) = sub_child_insertion_point {
+                if let Some((_, _, se)) = sub_child_insertion_point {
                     diag.push_error(
                         "The @children placeholder cannot appear in a conditional element".into(),
                         &se,
@@ -1338,19 +1439,19 @@ impl Element {
                         &se,
                     )
                 } else {
-                    children_placeholder = Some(se.clone().into());
+                    children_placeholder = Some((se.clone().into(), r.borrow().children.len()));
                 }
             }
         }
 
-        if let Some(children_placeholder) = children_placeholder {
+        if let Some((children_placeholder, index)) = children_placeholder {
             if component_child_insertion_point.is_some() {
                 diag.push_error(
                     "The @children placeholder can only appear once in an element hierarchy".into(),
                     &children_placeholder,
                 )
             } else {
-                *component_child_insertion_point = Some((r.clone(), children_placeholder));
+                *component_child_insertion_point = Some((r.clone(), index, children_placeholder));
             }
         }
 
@@ -1362,7 +1463,16 @@ impl Element {
                     .StatePropertyChange()
                     .filter_map(|s| {
                         lookup_property_from_qualified_name_for_state(s.QualifiedName(), &r, diag)
-                            .map(|(ne, _)| {
+                            .map(|(ne, ty)| {
+                                if !ty.is_property_type() && !matches!(ty, Type::Invalid) {
+                                    diag.push_error(
+                                        format!(
+                                            "'{}' is not a property",
+                                            s.QualifiedName().to_string()
+                                        ),
+                                        &s,
+                                    );
+                                }
                                 (ne, Expression::Uncompiled(s.BindingExpression().into()), s)
                             })
                     })
@@ -1370,7 +1480,7 @@ impl Element {
             };
             for trs in state.Transition() {
                 let mut t = Transition::from_node(trs, &r, tr, diag);
-                t.state_id = s.id.clone();
+                t.state_id.clone_from(&s.id);
                 r.borrow_mut().transitions.push(t);
             }
             r.borrow_mut().states.push(s);
@@ -1636,7 +1746,7 @@ impl Element {
     pub fn original_name(&self) -> String {
         self.debug
             .first()
-            .and_then(|n| n.0.child_token(parser::SyntaxKind::Identifier))
+            .and_then(|n| n.node.child_token(parser::SyntaxKind::Identifier))
             .map(|n| n.to_string())
             .unwrap_or_else(|| self.id.clone())
     }
@@ -1693,6 +1803,31 @@ impl Element {
         } else {
             None
         }
+    }
+
+    pub fn element_infos(&self) -> String {
+        let mut debug_infos = self.debug.clone();
+        let mut base = self.base_type.clone();
+        while let ElementType::Component(b) = base {
+            let elem = b.root_element.borrow();
+            base = elem.base_type.clone();
+            debug_infos.extend(elem.debug.iter().cloned());
+        }
+
+        let (infos, _, _) = debug_infos.into_iter().fold(
+            (String::new(), false, true),
+            |(mut infos, elem_boundary, first), debug_info| {
+                if elem_boundary {
+                    infos.push('/');
+                } else if !first {
+                    infos.push(';');
+                }
+
+                infos.push_str(&debug_info.encoded_element_info());
+                (infos, debug_info.element_boundary, false)
+            },
+        );
+        infos
     }
 }
 
@@ -1997,12 +2132,6 @@ pub fn recurse_elem_including_sub_components_no_borrow<State>(
         .borrow()
         .iter()
         .for_each(|p| recurse_elem_including_sub_components_no_borrow(&p.component, state, vis));
-    component
-        .used_types
-        .borrow()
-        .globals
-        .iter()
-        .for_each(|p| recurse_elem_including_sub_components_no_borrow(p, state, vis));
 }
 
 /// This visit the binding attached to this element, but does not recurse in children elements
@@ -2046,6 +2175,13 @@ pub fn visit_element_expressions(
         elem.borrow_mut().repeated.as_mut().unwrap().model = model;
     }
     visit_element_expressions_simple(elem, &mut vis);
+
+    for (_, expr) in &elem.borrow().change_callbacks {
+        for expr in expr.borrow_mut().iter_mut() {
+            vis(expr, Some("$change callback$"), &|| Type::Void);
+        }
+    }
+
     let mut states = std::mem::take(&mut elem.borrow_mut().states);
     for s in &mut states {
         if let Some(cond) = s.condition.as_mut() {
@@ -2140,7 +2276,7 @@ pub fn visit_all_named_references_in_element(
     elem.borrow_mut().layout_info_prop = layout_info_prop;
     let mut debug = std::mem::take(&mut elem.borrow_mut().debug);
     for d in debug.iter_mut() {
-        d.1.as_mut().map(|l| l.visit_named_references(&mut vis));
+        d.layout.as_mut().map(|l| l.visit_named_references(&mut vis));
     }
     elem.borrow_mut().debug = debug;
 
@@ -2474,6 +2610,31 @@ impl Exports {
             .ok()
             .map(|index| self.components_or_types[index].1.clone())
     }
+
+    pub(crate) fn snapshot(&self, snapshotter: &mut crate::typeloader::Snapshotter) -> Self {
+        let components_or_types = self
+            .components_or_types
+            .iter()
+            .map(|(en, either)| {
+                let en = en.clone();
+                let either = match either {
+                    itertools::Either::Left(l) => {
+                        itertools::Either::Left(snapshotter.snapshot_component(l))
+                    }
+                    itertools::Either::Right(r) => itertools::Either::Right(r.clone()),
+                };
+                (en, either)
+            })
+            .collect();
+
+        Self {
+            components_or_types,
+            last_exported_component: self
+                .last_exported_component
+                .as_ref()
+                .map(|lec| snapshotter.snapshot_component(lec)),
+        }
+    }
 }
 
 impl std::iter::IntoIterator for Exports {
@@ -2572,7 +2733,7 @@ pub fn adjust_geometry_for_injected_parent(injected_parent: &ElementRc, old_elem
     );
     let mut old_elem_mut = old_elem.borrow_mut();
     injected_parent_mut.default_fill_parent = std::mem::take(&mut old_elem_mut.default_fill_parent);
-    injected_parent_mut.geometry_props = old_elem_mut.geometry_props.clone();
+    injected_parent_mut.geometry_props.clone_from(&old_elem_mut.geometry_props);
     drop(injected_parent_mut);
     old_elem_mut.geometry_props.as_mut().unwrap().x = NamedReference::new(injected_parent, "dummy");
     old_elem_mut.geometry_props.as_mut().unwrap().y = NamedReference::new(injected_parent, "dummy");

@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #![doc = include_str!("README.md")]
 #![doc(html_logo_url = "https://slint.dev/logo/slint-logo-square-light.svg")]
@@ -47,6 +47,7 @@ pub mod vulkan_surface;
 
 pub mod opengl_surface;
 
+use i_slint_core::items::TextWrap;
 pub use skia_safe;
 
 cfg_if::cfg_if! {
@@ -62,8 +63,8 @@ cfg_if::cfg_if! {
 }
 
 fn create_default_surface(
-    window_handle: raw_window_handle::WindowHandle<'_>,
-    display_handle: raw_window_handle::DisplayHandle<'_>,
+    window_handle: Rc<dyn raw_window_handle::HasWindowHandle>,
+    display_handle: Rc<dyn raw_window_handle::HasDisplayHandle>,
     size: PhysicalWindowSize,
 ) -> Result<Box<dyn Surface>, PlatformError> {
     match DefaultSurface::new(window_handle.clone(), display_handle.clone(), size) {
@@ -93,8 +94,8 @@ pub struct SkiaRenderer {
     rendering_first_time: Cell<bool>,
     surface: RefCell<Option<Box<dyn Surface>>>,
     surface_factory: fn(
-        window_handle: raw_window_handle::WindowHandle<'_>,
-        display_handle: raw_window_handle::DisplayHandle<'_>,
+        window_handle: Rc<dyn raw_window_handle::HasWindowHandle>,
+        display_handle: Rc<dyn raw_window_handle::HasDisplayHandle>,
         size: PhysicalWindowSize,
     ) -> Result<Box<dyn Surface>, PlatformError>,
     pre_present_callback: RefCell<Option<Box<dyn FnMut()>>>,
@@ -156,8 +157,8 @@ impl SkiaRenderer {
 
     /// Creates a new renderer is associated with the provided window adapter.
     pub fn new(
-        window_handle: raw_window_handle::WindowHandle<'_>,
-        display_handle: raw_window_handle::DisplayHandle<'_>,
+        window_handle: Rc<dyn raw_window_handle::HasWindowHandle>,
+        display_handle: Rc<dyn raw_window_handle::HasDisplayHandle>,
         size: PhysicalWindowSize,
     ) -> Result<Self, PlatformError> {
         Ok(Self::new_with_surface(create_default_surface(window_handle, display_handle, size)?))
@@ -191,11 +192,20 @@ impl SkiaRenderer {
     /// Reset the surface to the window given the window handle
     pub fn set_window_handle(
         &self,
-        window_handle: raw_window_handle::WindowHandle<'_>,
-        display_handle: raw_window_handle::DisplayHandle<'_>,
+        window_handle: Rc<dyn raw_window_handle::HasWindowHandle>,
+        display_handle: Rc<dyn raw_window_handle::HasDisplayHandle>,
         size: PhysicalWindowSize,
+        scale_factor: f32,
     ) -> Result<(), PlatformError> {
-        self.set_surface((self.surface_factory)(window_handle, display_handle, size)?);
+        self.image_cache.clear_all();
+        self.path_cache.clear_all();
+        // Destroy the old surface before allocating the new one, to work around
+        // the vivante drivers using zwp_linux_explicit_synchronization_v1 and
+        // trying to create a second synchronization object and that's not allowed.
+        drop(self.surface.borrow_mut().take());
+        let surface = (self.surface_factory)(window_handle, display_handle, size)?;
+        surface.set_scale_factor(scale_factor);
+        self.set_surface(surface);
         Ok(())
     }
 
@@ -233,6 +243,8 @@ impl SkiaRenderer {
         let window_adapter = self.window_adapter()?;
         let window = window_adapter.window();
         let window_inner = WindowInner::from_pub(window);
+
+        surface.set_scale_factor(window.scale_factor());
 
         surface.render(
             surace_size,
@@ -344,6 +356,7 @@ impl i_slint_core::renderer::RendererSealed for SkiaRenderer {
         text: &str,
         max_width: Option<LogicalLength>,
         scale_factor: ScaleFactor,
+        _text_wrap: TextWrap, //TODO: Add support for char-wrap
     ) -> LogicalSize {
         let (layout, _) = textlayout::create_layout(
             font_request,
@@ -534,8 +547,8 @@ impl Drop for SkiaRenderer {
 pub trait Surface {
     /// Creates a new surface with the given window, display, and size.
     fn new(
-        window_handle: raw_window_handle::WindowHandle<'_>,
-        display_handle: raw_window_handle::DisplayHandle<'_>,
+        window_handle: Rc<dyn raw_window_handle::HasWindowHandle>,
+        display_handle: Rc<dyn raw_window_handle::HasDisplayHandle>,
         size: PhysicalWindowSize,
     ) -> Result<Self, PlatformError>
     where
@@ -554,6 +567,8 @@ pub trait Surface {
     fn supports_graphics_api_with_self(&self) -> bool {
         false
     }
+
+    fn set_scale_factor(&self, _scale_factor: f32) {}
 
     /// If supported, this invokes the specified callback with access to the platform graphics API.
     fn with_graphics_api(&self, _callback: &mut dyn FnMut(GraphicsAPI<'_>)) {}

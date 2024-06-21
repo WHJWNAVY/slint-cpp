@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 import { MaterialPalette, MaterialFontSettings, Icons } from "styling.slint";
 
@@ -18,6 +18,10 @@ export component CheckBox {
     accessible-checkable: true;
     accessible-checked <=> root.checked;
     accessible-role: checkbox;
+    accessible-action-default => {
+        root.checked = !root.checked;
+        root.toggled();
+    }
     forward-focus: i-focus-scope;
 
     states [

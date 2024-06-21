@@ -1,13 +1,11 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! This module contains the GraphicsWindow that used to be within corelib.
 
 // cspell:ignore accesskit borderless corelib nesw webgl winit winsys xlib
 
-use core::cell::Cell;
-#[cfg(target_arch = "wasm32")]
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::pin::Pin;
 use std::rc::Rc;
 #[cfg(target_arch = "wasm32")]
@@ -22,10 +20,12 @@ use const_field_offset::FieldOffsets;
 use corelib::item_tree::ItemTreeRc;
 #[cfg(enable_accesskit)]
 use corelib::item_tree::ItemTreeRef;
-use corelib::items::MouseCursor;
+use corelib::items::{ColorScheme, MouseCursor};
 #[cfg(enable_accesskit)]
 use corelib::items::{ItemRc, ItemRef};
 
+#[cfg(not(target_family = "wasm"))]
+use crate::SlintUserEvent;
 use corelib::api::PhysicalSize;
 use corelib::layout::Orientation;
 use corelib::lengths::LogicalLength;
@@ -35,7 +35,9 @@ use corelib::Property;
 use corelib::{graphics::*, Coord};
 use i_slint_core as corelib;
 use once_cell::unsync::OnceCell;
-use winit::window::WindowBuilder;
+#[cfg(not(target_family = "wasm"))]
+use winit::event_loop::EventLoopProxy;
+use winit::window::WindowAttributes;
 
 fn position_to_winit(pos: &corelib::api::WindowPosition) -> winit::dpi::Position {
     match pos {
@@ -117,7 +119,7 @@ pub struct WinitWindowAdapter {
     #[cfg(target_arch = "wasm32")]
     self_weak: Weak<Self>,
     pending_redraw: Cell<bool>,
-    dark_color_scheme: OnceCell<Pin<Box<Property<bool>>>>,
+    color_scheme: OnceCell<Pin<Box<Property<ColorScheme>>>>,
     constraints: Cell<corelib::window::LayoutConstraints>,
     shown: Cell<bool>,
     window_level: Cell<winit::window::WindowLevel>,
@@ -137,7 +139,7 @@ pub struct WinitWindowAdapter {
     virtual_keyboard_helper: RefCell<Option<super::wasm_input_helper::WasmInputHelper>>,
 
     #[cfg(enable_accesskit)]
-    pub accesskit_adapter: crate::accesskit::AccessKitAdapter,
+    pub accesskit_adapter: RefCell<crate::accesskit::AccessKitAdapter>,
 
     winit_window: Rc<winit::window::Window>, // Last field so that any previously provided window handles are still valid in the drop impl of the renderers, etc.
 }
@@ -147,13 +149,14 @@ impl WinitWindowAdapter {
     pub(crate) fn new(
         renderer: Box<dyn WinitCompatibleRenderer>,
         winit_window: Rc<winit::window::Window>,
+        #[cfg(not(target_family = "wasm"))] proxy: EventLoopProxy<SlintUserEvent>,
     ) -> Rc<Self> {
         let self_rc = Rc::new_cyclic(|self_weak| Self {
             window: OnceCell::with_value(corelib::api::Window::new(self_weak.clone() as _)),
             #[cfg(target_arch = "wasm32")]
             self_weak: self_weak.clone(),
             pending_redraw: Default::default(),
-            dark_color_scheme: Default::default(),
+            color_scheme: Default::default(),
             constraints: Default::default(),
             shown: Default::default(),
             window_level: Default::default(),
@@ -170,10 +173,16 @@ impl WinitWindowAdapter {
             accesskit_adapter: crate::accesskit::AccessKitAdapter::new(
                 self_weak.clone(),
                 &winit_window,
-            ),
+                proxy,
+            )
+            .into(),
         });
 
-        let id = self_rc.winit_window().id();
+        let winit_window = self_rc.winit_window();
+        if let Err(e) = self_rc.renderer.resumed(winit_window.clone()) {
+            i_slint_core::debug_log!("Error initialing renderer in winit backend with window: {e}");
+        }
+        let id = winit_window.id();
         crate::event_loop::register_window(id, (self_rc.clone()) as _);
 
         let scale_factor = std::env::var("SLINT_SCALE_FACTOR")
@@ -190,16 +199,16 @@ impl WinitWindowAdapter {
         self.renderer.as_ref()
     }
 
-    pub(crate) fn window_builder(
+    pub(crate) fn window_attributes(
         #[cfg(target_arch = "wasm32")] canvas_id: &str,
-    ) -> Result<WindowBuilder, PlatformError> {
-        let mut window_builder = WindowBuilder::new().with_transparent(true).with_visible(false);
+    ) -> Result<WindowAttributes, PlatformError> {
+        let mut attrs = WindowAttributes::default().with_transparent(true).with_visible(false);
 
-        window_builder = window_builder.with_title("Slint Window".to_string());
+        attrs = attrs.with_title("Slint Window".to_string());
 
         #[cfg(target_arch = "wasm32")]
         {
-            use winit::platform::web::WindowBuilderExtWebSys;
+            use winit::platform::web::WindowAttributesExtWebSys;
 
             use wasm_bindgen::JsCast;
 
@@ -221,14 +230,14 @@ impl WinitWindowAdapter {
                         canvas_id
                     )
                 })?;
-            window_builder = window_builder
+            attrs = attrs
                 .with_canvas(Some(html_canvas))
                 // Don't activate the window by default, as that will cause the page to scroll,
                 // ignoring any existing anchors.
                 .with_active(false)
         };
 
-        Ok(window_builder)
+        Ok(attrs)
     }
 
     /// Draw the items of the specified `component` in the given window.
@@ -305,11 +314,11 @@ impl WinitWindowAdapter {
         Ok(())
     }
 
-    pub fn set_dark_color_scheme(&self, dark_mode: bool) {
-        self.dark_color_scheme
-            .get_or_init(|| Box::pin(Property::new(false)))
+    pub fn set_color_scheme(&self, scheme: ColorScheme) {
+        self.color_scheme
+            .get_or_init(|| Box::pin(Property::new(ColorScheme::Unknown)))
             .as_ref()
-            .set(dark_mode)
+            .set(scheme)
     }
 
     pub fn window_state_event(&self) {
@@ -410,9 +419,12 @@ impl WindowAdapter for WinitWindowAdapter {
 
             // Make sure the dark color scheme property is up-to-date, as it may have been queried earlier when
             // the window wasn't mapped yet.
-            if let Some(dark_color_scheme_prop) = self.dark_color_scheme.get() {
+            if let Some(color_scheme_prop) = self.color_scheme.get() {
                 if let Some(theme) = winit_window.theme() {
-                    dark_color_scheme_prop.as_ref().set(theme == winit::window::Theme::Dark)
+                    color_scheme_prop.as_ref().set(match theme {
+                        winit::window::Theme::Dark => ColorScheme::Dark,
+                        winit::window::Theme::Light => ColorScheme::Light,
+                    })
                 }
             }
 
@@ -621,15 +633,15 @@ impl WindowAdapter for WinitWindowAdapter {
     #[cfg(feature = "raw-window-handle-06")]
     fn window_handle_06(
         &self,
-    ) -> Result<raw_window_handle_06::WindowHandle<'_>, raw_window_handle_06::HandleError> {
-        raw_window_handle_06::HasWindowHandle::window_handle(&self.winit_window)
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        raw_window_handle::HasWindowHandle::window_handle(&self.winit_window)
     }
 
     #[cfg(feature = "raw-window-handle-06")]
     fn display_handle_06(
         &self,
-    ) -> Result<raw_window_handle_06::DisplayHandle<'_>, raw_window_handle_06::HandleError> {
-        raw_window_handle_06::HasDisplayHandle::display_handle(&self.winit_window)
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        raw_window_handle::HasDisplayHandle::display_handle(&self.winit_window)
     }
 }
 
@@ -668,7 +680,7 @@ impl WindowAdapterInternal for WinitWindowAdapter {
         };
         self.with_window_handle(&mut |winit_window| {
             winit_window.set_cursor_visible(cursor != MouseCursor::None);
-            winit_window.set_cursor_icon(winit_cursor);
+            winit_window.set_cursor(winit_cursor);
         });
     }
 
@@ -719,13 +731,14 @@ impl WindowAdapterInternal for WinitWindowAdapter {
         self
     }
 
-    fn dark_color_scheme(&self) -> bool {
-        self.dark_color_scheme
+    fn color_scheme(&self) -> ColorScheme {
+        self.color_scheme
             .get_or_init(|| {
                 Box::pin(Property::new({
-                    self.winit_window()
-                        .theme()
-                        .map_or(false, |theme| theme == winit::window::Theme::Dark)
+                    self.winit_window().theme().map_or(ColorScheme::Unknown, |theme| match theme {
+                        winit::window::Theme::Dark => ColorScheme::Dark,
+                        winit::window::Theme::Light => ColorScheme::Light,
+                    })
                 }))
             })
             .as_ref()
@@ -734,21 +747,26 @@ impl WindowAdapterInternal for WinitWindowAdapter {
 
     #[cfg(enable_accesskit)]
     fn handle_focus_change(&self, _old: Option<ItemRc>, _new: Option<ItemRc>) {
-        self.accesskit_adapter.handle_focus_item_change();
+        self.accesskit_adapter.borrow_mut().handle_focus_item_change();
     }
 
     #[cfg(enable_accesskit)]
     fn register_item_tree(&self) {
-        self.accesskit_adapter.register_item_tree();
+        // If the accesskit_adapter is already borrowed, this means the new items were created when the tree was built and there is no need to re-visit them
+        if let Ok(mut a) = self.accesskit_adapter.try_borrow_mut() {
+            a.reload_tree();
+        };
     }
 
     #[cfg(enable_accesskit)]
     fn unregister_item_tree(
         &self,
-        _component: ItemTreeRef,
+        component: ItemTreeRef,
         _: &mut dyn Iterator<Item = Pin<ItemRef<'_>>>,
     ) {
-        self.accesskit_adapter.unregister_item_tree(_component);
+        if let Ok(mut a) = self.accesskit_adapter.try_borrow_mut() {
+            a.unregister_item_tree(component);
+        }
     }
 }
 

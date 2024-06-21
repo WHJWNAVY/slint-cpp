@@ -1,4 +1,4 @@
-<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial -->
+<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0 -->
 
 # Editor Configuration for Slint
 
@@ -19,29 +19,28 @@ get you started.
 
 ## Kate
 
+Before we start, it's important to note that Kate relies on the presence of syntax highlighting file for the usage of the LSP.
+Therefore, we'll set up the syntax highlighting first.
+
 ### Syntax Highlighting
 
-Kate relies on the presence of syntax highlighting file for the usage of the LSP so we'll setup
-that first. The file [slint.ksyntaxhighlighter.xml](kate/slint.ksyntaxhighlighter.xml) needs to be copied
-in a location where kate can find it. See the [kate documentation](https://docs.kde.org/stable5/en/kate/katepart/highlight.html#katehighlight-xml-format)
+The file [slint.ksyntaxhighlighter.xml](kate/slint.ksyntaxhighlighter.xml) needs to be copied into a location where Kate can find it.
+See the [kate documentation](https://docs.kde.org/stable5/en/kate/katepart/highlight.html#katehighlight-xml-format)
 
 On Linux, this can be done by running this command
 
-```
+```sh
 mkdir -p ~/.local/share/org.kde.syntax-highlighting/syntax/
 wget https://raw.githubusercontent.com/slint-ui/slint/master/editors/kate/slint.ksyntaxhighlighter.xml -O ~/.local/share/org.kde.syntax-highlighting/syntax/slint.xml
 ```
 
 On Windows, download [slint.ksyntaxhighlighter.xml](./slint.ksyntaxhighlighter.xml) into `%USERPROFILE%\AppData\Local\org.kde.syntax-highlighting\syntax`
 
-
 ### LSP
 
-To install the Slint Language server, check the [LSP README.md](../tools/lsp/README.md).
+After setting up the syntax highlighting, you can now install the Slint Language server. Check the [LSP README.md](../tools/lsp/README.md) for instructions.
 
-Then go to *Settings > Configure Kate*. In the *Plugins* section, enable the *LSP-Client* plugin.
-This will add a *LSP Client* section in the settings dialog. In that *LSP Client* section,
-go to the *User Server Settings*, and  enter the following in the text area:
+Once it is installed, go to *Settings > Configure Kate*. In the *Plugins* section, enable the *LSP-Client* plugin. This will add a *LSP Client* section in the settings dialog. In that *LSP Client* section, go to the *User Server Settings*, and  enter the following in the text area:
 
 ```json
 {
@@ -55,8 +54,13 @@ go to the *User Server Settings*, and  enter the following in the text area:
 }
 ```
 
-To show the preview, right click on the name definition of the component you want to preview
-(eg. `MainWindow` in `MainWindow := Window {`). Then in the menu, select *LSP Client > Code Action > Show Preview*.
+To preview a component, first, position your cursor on the name definition of the component you want to preview
+(for instance, `MainWindow` in `component MainWindow inherits Window {`).
+Then, activate the *Show Preview* code action.
+You can do this by using the Alt+Enter shortcut to bring up the code action menu,
+or find it in the menu bar at *LSP Client > Code Action > Show Preview*
+
+<img src="https://github.com/slint-ui/slint/assets/959326/e2e6f1a8-d3b8-46a1-87b3-0273c4a40cfc" width="75%" height="75%">
 
 
 ## QtCreator
@@ -172,3 +176,15 @@ https://github.com/kizeevov/slint-idea-plugin has a plugin for the Intellij
 platform.
 
 _Note: This plugin is developed by @kizeevov._
+
+## Zed
+
+[Zed](https://zed.dev) is a high-performance, multiplayer code editor. Luke Jones maintains
+the [zed-slint extension](https://gitlab.com/flukejones/zed-slint), that integrates the latest
+release of the [slint language server](../tools/lsp/README.md) into Zed, offering code completion
+and syntax highlighting. Install the extension via the following steps:
+
+1. Open the extensions tab via the Zed -> Extensions menu.
+2. In the search field, enter "slint".
+3. Click on "Install" for the "Slint" extension.
+

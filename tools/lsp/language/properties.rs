@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use crate::common::{self, Result};
 use crate::language;
@@ -11,9 +11,6 @@ use i_slint_compiler::object_tree::{Element, PropertyDeclaration, PropertyVisibi
 use i_slint_compiler::parser::{syntax_nodes, Language, SyntaxKind};
 
 use std::collections::HashSet;
-
-#[cfg(target_arch = "wasm32")]
-use crate::wasm_prelude::*;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
 pub(crate) struct DefinitionInformation {
@@ -67,11 +64,11 @@ pub struct SetBindingResponse {
 // This gets defined accessibility properties...
 fn get_reserved_properties<'a>(
     group: &'a str,
-    properties: &'a [(&'a str, Type)],
+    properties: impl Iterator<Item = (&'static str, Type)> + 'a,
 ) -> impl Iterator<Item = PropertyInformation> + 'a {
-    properties.iter().map(|p| PropertyInformation {
+    properties.map(|p| PropertyInformation {
         name: p.0.to_string(),
-        type_name: format!("{}", p.1),
+        type_name: p.1.to_string(),
         declared_at: None,
         defined_at: None,
         group: group.to_string(),
@@ -337,14 +334,18 @@ fn get_properties(element: &common::ElementRcNode) -> Vec<PropertyInformation> {
                 if b.name == "Image" {
                     result.extend(get_reserved_properties(
                         "rotation",
-                        i_slint_compiler::typeregister::RESERVED_ROTATION_PROPERTIES,
+                        i_slint_compiler::typeregister::RESERVED_ROTATION_PROPERTIES
+                            .iter()
+                            .cloned(),
                     ));
                 }
 
                 if b.name == "Rectangle" {
                     result.extend(get_reserved_properties(
                         "drop-shadow",
-                        i_slint_compiler::typeregister::RESERVED_DROP_SHADOW_PROPERTIES,
+                        i_slint_compiler::typeregister::RESERVED_DROP_SHADOW_PROPERTIES
+                            .iter()
+                            .cloned(),
                     ));
                 }
             }
@@ -357,12 +358,12 @@ fn get_properties(element: &common::ElementRcNode) -> Vec<PropertyInformation> {
 
         result.extend(get_reserved_properties(
             "geometry",
-            i_slint_compiler::typeregister::RESERVED_GEOMETRY_PROPERTIES,
+            i_slint_compiler::typeregister::RESERVED_GEOMETRY_PROPERTIES.iter().cloned(),
         ));
         result.extend(
             get_reserved_properties(
                 "layout",
-                i_slint_compiler::typeregister::RESERVED_LAYOUT_PROPERTIES,
+                i_slint_compiler::typeregister::RESERVED_LAYOUT_PROPERTIES.iter().cloned(),
             )
             // padding arbitrary items is not yet implemented
             .filter(|x| !x.name.starts_with("padding")),
@@ -370,7 +371,7 @@ fn get_properties(element: &common::ElementRcNode) -> Vec<PropertyInformation> {
         // FIXME: ideally only if parent is a grid layout
         result.extend(get_reserved_properties(
             "layout",
-            i_slint_compiler::typeregister::RESERVED_GRIDLAYOUT_PROPERTIES,
+            i_slint_compiler::typeregister::RESERVED_GRIDLAYOUT_PROPERTIES.iter().cloned(),
         ));
         result.push(PropertyInformation {
             name: "accessible-role".into(),
@@ -385,7 +386,7 @@ fn get_properties(element: &common::ElementRcNode) -> Vec<PropertyInformation> {
         if current_element.borrow().is_binding_set("accessible-role", true) {
             result.extend(get_reserved_properties(
                 "accessibility",
-                i_slint_compiler::typeregister::RESERVED_ACCESSIBILITY_PROPERTIES,
+                i_slint_compiler::typeregister::reserved_accessibility_properties(),
             ));
         }
         break;
@@ -627,7 +628,7 @@ pub fn set_binding(
         let expr_context_info = element.with_element_node(|node| {
             util::ExpressionContextInfo::new(node.clone(), property_name.to_string(), false)
         });
-        util::with_property_lookup_ctx(&document_cache.documents, &expr_context_info, |ctx| {
+        util::with_property_lookup_ctx(document_cache, &expr_context_info, |ctx| {
             let expression =
                 i_slint_compiler::expression_tree::Expression::from_binding_expression_node(
                     expression_node,
@@ -720,17 +721,16 @@ pub fn set_bindings(
 
 #[cfg(any(feature = "preview-external", feature = "preview-engine"))]
 fn element_at_source_code_position(
-    dc: &mut language::DocumentCache,
+    document_cache: &mut language::DocumentCache,
     position: &common::VersionedPosition,
 ) -> Result<common::ElementRcNode> {
-    let file = lsp_types::Url::to_file_path(position.url())
-        .map_err(|_| "Failed to convert URL to file path".to_string())?;
-
-    if &dc.document_version(position.url()) != position.version() {
+    if &document_cache.document_version(position.url()) != position.version() {
         return Err("Document version mismatch.".into());
     }
 
-    let doc = dc.documents.get_document(&file).ok_or_else(|| "Document not found".to_string())?;
+    let doc = document_cache
+        .get_document(position.url())
+        .ok_or_else(|| "Document not found".to_string())?;
 
     let source_file = doc
         .node
@@ -739,9 +739,10 @@ fn element_at_source_code_position(
         .ok_or_else(|| "Document had no node".to_string())?;
     let element_position = util::map_position(&source_file, position.offset().into());
 
-    Ok(language::element_at_position(&dc.documents, position.url(), &element_position).ok_or_else(
-        || format!("No element found at the given start position {:?}", &element_position),
-    )?)
+    Ok(language::element_at_position(document_cache, position.url(), &element_position)
+        .ok_or_else(|| {
+            format!("No element found at the given start position {:?}", &element_position)
+        })?)
 }
 
 #[cfg(any(feature = "preview-external", feature = "preview-engine"))]
@@ -839,8 +840,6 @@ pub fn remove_binding(
 
 #[cfg(test)]
 mod tests {
-    use i_slint_compiler::typeloader::TypeLoader;
-
     use super::*;
 
     use crate::language::test::{complex_document_cache, loaded_document_cache};
@@ -855,11 +854,14 @@ mod tests {
     fn properties_at_position_in_cache(
         line: u32,
         character: u32,
-        tl: &TypeLoader,
+        document_cache: &common::DocumentCache,
         url: &lsp_types::Url,
     ) -> Option<(common::ElementRcNode, Vec<PropertyInformation>)> {
-        let element =
-            language::element_at_position(tl, url, &lsp_types::Position { line, character })?;
+        let element = language::element_at_position(
+            document_cache,
+            url,
+            &lsp_types::Position { line, character },
+        )?;
         Some((element.clone(), get_properties(&element)))
     }
 
@@ -873,8 +875,7 @@ mod tests {
         lsp_types::Url,
     )> {
         let (dc, url, _) = complex_document_cache();
-        if let Some((e, p)) = properties_at_position_in_cache(line, character, &dc.documents, &url)
-        {
+        if let Some((e, p)) = properties_at_position_in_cache(line, character, &dc, &url) {
             Some((e, p, dc, url))
         } else {
             None
@@ -911,9 +912,9 @@ mod tests {
 
     #[test]
     fn test_element_information() {
-        let (dc, url, _) = complex_document_cache();
+        let (document_cache, url, _) = complex_document_cache();
         let element =
-            language::element_at_position(&dc.documents, &url, &lsp_types::Position::new(33, 4))
+            language::element_at_position(&document_cache, &url, &lsp_types::Position::new(33, 4))
                 .unwrap();
 
         let result = get_element_information(&element);
@@ -943,8 +944,7 @@ mod tests {
 
         let (dc, url, _) = loaded_document_cache(content);
 
-        let (_, result) =
-            properties_at_position_in_cache(pos_l, pos_c, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(pos_l, pos_c, &dc, &url).unwrap();
 
         let p = find_property(&result, "text").unwrap();
         let definition = p.defined_at.as_ref().unwrap();
@@ -1406,11 +1406,10 @@ component MainWindow inherits Window {
             "#.to_string());
         let file_url = url.clone();
 
-        let doc = dc.documents.get_document(&crate::language::uri_to_file(&url).unwrap()).unwrap();
+        let doc = dc.get_document(&url).unwrap();
         let source = &doc.node.as_ref().unwrap().source_file;
         let (l, c) = source.line_column(source.source().unwrap().find("base2 :=").unwrap());
-        let (_, result) =
-            properties_at_position_in_cache(l as u32, c as u32, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(l as u32, c as u32, &dc, &url).unwrap();
 
         let foo_property = find_property(&result, "foo").unwrap();
 
@@ -1442,7 +1441,7 @@ component SomeRect inherits Rectangle {
             .to_string(),
         );
 
-        let (_, result) = properties_at_position_in_cache(1, 25, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(1, 25, &dc, &url).unwrap();
 
         let glob_property = find_property(&result, "glob").unwrap();
         assert_eq!(glob_property.type_name, "int");
@@ -1452,7 +1451,7 @@ component SomeRect inherits Rectangle {
         assert_eq!(glob_property.group, "");
         assert_eq!(find_property(&result, "width"), None);
 
-        let (_, result) = properties_at_position_in_cache(8, 4, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(8, 4, &dc, &url).unwrap();
         let abcd_property = find_property(&result, "abcd").unwrap();
         assert_eq!(abcd_property.type_name, "int");
         let declaration = abcd_property.declared_at.as_ref().unwrap();
@@ -1477,7 +1476,7 @@ component SomeRect inherits Rectangle {
         let (dc, url, _) =
             loaded_document_cache(r#"export component Demo { Text { text: } }"#.to_string());
 
-        let (_, result) = properties_at_position_in_cache(0, 35, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(0, 35, &dc, &url).unwrap();
 
         let prop = find_property(&result, "text").unwrap();
         assert_eq!(prop.defined_at, None); // The property has no valid definition at this time
@@ -1501,7 +1500,7 @@ component Base {
             .to_string(),
         );
 
-        let (_, result) = properties_at_position_in_cache(3, 0, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(3, 0, &dc, &url).unwrap();
         assert_eq!(find_property(&result, "a1").unwrap().type_name, "int");
         assert_eq!(
             find_property(&result, "a1").unwrap().defined_at.as_ref().unwrap().expression_value,
@@ -1556,7 +1555,7 @@ component MyComp {
             .to_string(),
         );
 
-        let (_, result) = properties_at_position_in_cache(11, 1, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(11, 1, &dc, &url).unwrap();
         assert_eq!(find_property(&result, "a1").unwrap().type_name, "int");
         assert_eq!(
             find_property(&result, "a1").unwrap().defined_at.as_ref().unwrap().expression_value,
@@ -1607,19 +1606,19 @@ component MyComp {
             .to_string(),
         );
 
-        let (_, result) = properties_at_position_in_cache(3, 0, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(3, 0, &dc, &url).unwrap();
         assert_eq!(find_property(&result, "a").unwrap().type_name, "int");
         assert_eq!(find_property(&result, "b").unwrap().type_name, "int");
         assert_eq!(find_property(&result, "c").unwrap().type_name, "int");
         assert_eq!(find_property(&result, "d").unwrap().type_name, "int");
 
-        let (_, result) = properties_at_position_in_cache(10, 0, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(10, 0, &dc, &url).unwrap();
         assert_eq!(find_property(&result, "a"), None);
         assert_eq!(find_property(&result, "b").unwrap().type_name, "int");
         assert_eq!(find_property(&result, "c"), None);
         assert_eq!(find_property(&result, "d").unwrap().type_name, "int");
 
-        let (_, result) = properties_at_position_in_cache(13, 0, &dc.documents, &url).unwrap();
+        let (_, result) = properties_at_position_in_cache(13, 0, &dc, &url).unwrap();
         assert_eq!(find_property(&result, "enabled").unwrap().type_name, "bool");
         assert_eq!(find_property(&result, "pressed"), None);
     }

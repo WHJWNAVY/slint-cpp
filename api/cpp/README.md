@@ -1,4 +1,5 @@
-<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial -->
+<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0 -->
+
 # Slint-cpp
 
 ## A C++ UI toolkit
@@ -8,7 +9,7 @@ Slint.cpp is the C++ API to interact with a Slint UI from C++.
 
 The complete C++ documentation can be viewed online at https://slint.dev/docs/cpp/.
 
-If you are new to Slint, you might also consider going through our [Walk-through tutorial](https://slint.dev/docs/tutorial/cpp).
+If you are new to Slint, you might also consider going through our [Walk-through tutorial](https://slint.dev/docs/quickstart/cpp).
 
 ## Installing or Building Slint
 
@@ -250,6 +251,6 @@ int main() {
 That's it.
 
 For more details, check the [Online documentation](https://slint.dev/docs/cpp) and the full
-  [Walk-through tutorial](https://slint.dev/docs/tutorial/cpp).
+  [Walk-through tutorial](https://slint.dev/docs/quickstart/cpp).
 We also have a [Getting Started Template](https://github.com/slint-ui/slint-cpp-template) repository with
 the code of a minimal C++ application using Slint that can be used as a starting point to your program.

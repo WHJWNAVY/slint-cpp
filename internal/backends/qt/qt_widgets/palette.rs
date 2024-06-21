@@ -1,9 +1,9 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore deinit
 
-use i_slint_core::Brush;
+use i_slint_core::{items::ColorScheme, Brush};
 
 use super::*;
 
@@ -41,6 +41,7 @@ pub struct NativePalette {
     pub selection_background: Property<Brush>,
     pub selection_foreground: Property<Brush>,
     pub border: Property<Brush>,
+    pub color_scheme: Property<ColorScheme>,
     pub style_change_listener: core::cell::Cell<*const u8>,
 }
 
@@ -64,6 +65,7 @@ impl NativePalette {
             border: Default::default(),
             selection_background: Default::default(),
             selection_foreground: Default::default(),
+            color_scheme: Default::default(),
             style_change_listener: core::cell::Cell::new(core::ptr::null()),
         })
     }
@@ -142,16 +144,26 @@ impl NativePalette {
         self.border.set(Brush::from(border));
 
         let selection_background = cpp!(unsafe[] -> u32 as "QRgb" {
-            return qApp->palette().color(QPalette::HighlightedText).rgba();
+            return qApp->palette().color(QPalette::Highlight).rgba();
         });
         let selection_background = Color::from_argb_encoded(selection_background);
         self.selection_background.set(Brush::from(selection_background));
 
         let selection_foreground = cpp!(unsafe[] -> u32 as "QRgb" {
-            return qApp->palette().color(QPalette::Text).rgba();
+            return qApp->palette().color(QPalette::HighlightedText).rgba();
         });
         let selection_foreground = Color::from_argb_encoded(selection_foreground);
         self.selection_foreground.set(Brush::from(selection_foreground));
+
+        self.color_scheme.set(
+            if (background.red() as u32 + background.green() as u32 + background.blue() as u32) / 3
+                < 128
+            {
+                ColorScheme::Dark
+            } else {
+                ColorScheme::Light
+            },
+        );
 
         if self.style_change_listener.get().is_null() {
             self.style_change_listener.set(cpp!(unsafe [self as "void*"] -> *const u8 as "void*"{

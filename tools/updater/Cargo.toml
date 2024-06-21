@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 [package]
 name = "slint-updater"
@@ -19,11 +19,11 @@ categories = ["gui", "development-tools", "command-line-utilities"]
 [dependencies]
 i-slint-compiler = { workspace = true, features = ["default", "display-diagnostics"] }
 
-clap = { version = "4.0", features = ["derive", "wrap_help"] }
+clap = { workspace = true }
 codemap = "0.1"
 codemap-diagnostic = "0.1.1"
-spin_on = "0.1"
-by_address = "1.0.4"
+spin_on = { workspace = true }
+by_address = { workspace = true }
 
 [[bin]]
 name = "slint-updater"

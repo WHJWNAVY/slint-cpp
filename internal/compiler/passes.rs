@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 mod apply_default_properties_from_style;
 mod binding_analysis;
@@ -57,14 +57,15 @@ use crate::namedreference::NamedReference;
 pub async fn run_passes(
     doc: &crate::object_tree::Document,
     type_loader: &mut crate::typeloader::TypeLoader,
+    keep_raw: bool,
     diag: &mut crate::diagnostics::BuildDiagnostics,
-) {
+) -> Option<crate::typeloader::TypeLoader> {
     if matches!(
         doc.root_component.root_element.borrow().base_type,
         ElementType::Error | ElementType::Global
     ) {
         // If there isn't a root component, we shouldn't do any of these passes
-        return;
+        return None;
     }
 
     let style_metrics = {
@@ -78,20 +79,26 @@ pub async fn run_passes(
 
     let global_type_registry = type_loader.global_type_registry.clone();
     let root_component = &doc.root_component;
+    root_component.is_root_component.set(true);
     run_import_passes(doc, type_loader, diag);
     check_public_api::check_public_api(doc, diag);
 
-    collect_subcomponents::collect_subcomponents(root_component);
-    for component in (root_component.used_types.borrow().sub_components.iter())
-        .chain(std::iter::once(root_component))
-    {
+    let raw_type_loader =
+        keep_raw.then(|| crate::typeloader::snapshot_with_extra_doc(type_loader, doc).unwrap());
+
+    collect_subcomponents::collect_subcomponents(doc);
+    doc.visit_all_used_components(|component| {
         compile_paths::compile_paths(
             component,
             &doc.local_registry,
             type_loader.compiler_config.embed_resources,
             diag,
         );
-        lower_tabwidget::lower_tabwidget(component, type_loader, diag).await;
+    });
+    lower_tabwidget::lower_tabwidget(doc, type_loader, diag).await;
+    collect_subcomponents::collect_subcomponents(doc);
+
+    doc.visit_all_used_components(|component| {
         apply_default_properties_from_style::apply_default_properties_from_style(
             component,
             &style_metrics,
@@ -99,25 +106,23 @@ pub async fn run_passes(
         );
         lower_states::lower_states(component, &doc.local_registry, diag);
         lower_text_input_interface::lower_text_input_interface(component);
-    }
+        repeater_component::process_repeater_components(component);
+        lower_popups::lower_popups(component, &doc.local_registry, diag);
+        collect_init_code::collect_init_code(component);
+    });
 
-    inlining::inline(doc, inlining::InlineSelection::InlineOnlyRequiredComponents);
-    collect_subcomponents::collect_subcomponents(root_component);
+    inlining::inline(doc, inlining::InlineSelection::InlineOnlyRequiredComponents, diag);
+    collect_subcomponents::collect_subcomponents(doc);
 
     focus_handling::call_focus_on_init(root_component);
 
     ensure_window::ensure_window(root_component, &doc.local_registry, &style_metrics);
 
-    for component in (root_component.used_types.borrow().sub_components.iter())
-        .chain(std::iter::once(root_component))
-    {
+    doc.visit_all_used_components(|component| {
         border_radius::handle_border_radius(component, diag);
         flickable::handle_flickable(component, &global_type_registry.borrow());
-        repeater_component::process_repeater_components(component);
-        lower_popups::lower_popups(component, &doc.local_registry, diag);
         lower_component_container::lower_component_container(component, &doc.local_registry, diag);
-
-        lower_layout::lower_layouts(component, type_loader, diag).await;
+        lower_layout::lower_layouts(component, type_loader, &style_metrics, diag);
         default_geometry::default_geometry(component, diag);
         lower_absolute_coordinates::lower_absolute_coordinates(component);
         z_order::reorder_by_z_order(component, diag);
@@ -169,56 +174,52 @@ pub async fn run_passes(
         if type_loader.compiler_config.accessibility {
             lower_accessibility::lower_accessibility_properties(component, diag);
         }
-        collect_init_code::collect_init_code(component);
         materialize_fake_properties::materialize_fake_properties(component);
-    }
+    });
     lower_layout::check_window_layout(root_component);
     collect_globals::collect_globals(doc, diag);
 
     if type_loader.compiler_config.inline_all_elements {
-        inlining::inline(doc, inlining::InlineSelection::InlineAllComponents);
-        root_component.used_types.borrow_mut().sub_components.clear();
+        inlining::inline(doc, inlining::InlineSelection::InlineAllComponents, diag);
+        doc.used_types.borrow_mut().sub_components.clear();
     }
 
     binding_analysis::binding_analysis(doc, diag);
     unique_id::assign_unique_id(doc);
 
-    for component in (root_component.used_types.borrow().sub_components.iter())
-        .chain(std::iter::once(root_component))
-    {
+    doc.visit_all_used_components(|component| {
         deduplicate_property_read::deduplicate_property_read(component);
         optimize_useless_rectangles::optimize_useless_rectangles(component);
         move_declarations::move_declarations(component);
-    }
+    });
 
     remove_aliases::remove_aliases(doc, diag);
+    remove_return::remove_return(doc);
 
-    for component in (root_component.used_types.borrow().sub_components.iter())
-        .chain(std::iter::once(root_component))
-    {
+    doc.visit_all_used_components(|component| {
         if !diag.has_error() {
             // binding loop causes panics in const_propagation
             const_propagation::const_propagation(component);
         }
-        resolve_native_classes::resolve_native_classes(component);
-        remove_unused_properties::remove_unused_properties(component);
-    }
+        if !component.is_global() {
+            resolve_native_classes::resolve_native_classes(component);
+        }
+    });
 
+    remove_unused_properties::remove_unused_properties(doc);
     collect_structs_and_enums::collect_structs_and_enums(doc);
 
-    for component in (root_component.used_types.borrow().sub_components.iter())
-        .chain(std::iter::once(root_component))
-    {
-        generate_item_indices::generate_item_indices(component);
-    }
+    doc.visit_all_used_components(|component| {
+        if !component.is_global() {
+            generate_item_indices::generate_item_indices(component);
+        }
+    });
 
     // collect globals once more: After optimizations we might have less globals
     collect_globals::collect_globals(doc, diag);
 
-    remove_return::remove_return(doc);
-
     embed_images::embed_images(
-        root_component,
+        doc,
         type_loader.compiler_config.embed_resources,
         type_loader.compiler_config.scale_factor,
         &type_loader.compiler_config.resource_url_mapper,
@@ -234,19 +235,17 @@ pub async fn run_passes(
             // Include at least the default font sizes used in the MCU backend
             let mut font_pixel_sizes =
                 vec![(12. * type_loader.compiler_config.scale_factor) as i16];
-            for component in (root_component.used_types.borrow().sub_components.iter())
-                .chain(std::iter::once(root_component))
-            {
+            doc.visit_all_used_components(|component| {
                 embed_glyphs::collect_font_sizes_used(
                     component,
                     type_loader.compiler_config.scale_factor,
                     &mut font_pixel_sizes,
                 );
                 embed_glyphs::scan_string_literals(component, &mut characters_seen);
-            }
+            });
 
             embed_glyphs::embed_glyphs(
-                root_component,
+                doc,
                 type_loader.compiler_config.scale_factor,
                 font_pixel_sizes,
                 characters_seen,
@@ -257,15 +256,15 @@ pub async fn run_passes(
         _ => {
             // Create font registration calls for custom fonts, unless we're embedding pre-rendered glyphs
             collect_custom_fonts::collect_custom_fonts(
-                root_component,
+                doc,
                 std::iter::once(doc).chain(type_loader.all_documents()),
                 type_loader.compiler_config.embed_resources
                     == crate::EmbedResourcesKind::EmbedAllResources,
             );
         }
-    }
+    };
 
-    root_component.is_root_component.set(true);
+    raw_type_loader
 }
 
 /// Run the passes on imported documents

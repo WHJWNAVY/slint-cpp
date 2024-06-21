@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Software-3.0
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -22,7 +22,7 @@ import textwrap
 # -- Project information -----------------------------------------------------
 
 # The full version, including alpha/beta/rc tags
-version = "1.5.1"
+version = "1.7.0"
 
 project = f'Slint {version} C++ API'
 copyright = "SixtyFPS GmbH"
@@ -61,8 +61,8 @@ exhale_args = {
     "kindsWithContentsDirectives": [],
     "exhaleExecutesDoxygen": True,
     "exhaleDoxygenStdin": """INPUT = ../../api/cpp/include generated_include
-EXCLUDE_SYMBOLS = slint::cbindgen_private* slint::private_api* vtable* slint::testing* SLINT_DECL_ITEM
-EXCLUDE = ../../api/cpp/include/vtable.h ../../api/cpp/include/slint_testing.h
+EXCLUDE_SYMBOLS = slint::cbindgen_private* slint::private_api* vtable* SLINT_DECL_ITEM
+EXCLUDE = ../../api/cpp/include/vtable.h ../../api/cpp/include/slint_tests_helper.h
 ENABLE_PREPROCESSING = YES
 PREDEFINED += DOXYGEN
 INCLUDE_PATH = generated_include

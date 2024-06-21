@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use super::{EvaluationContext, Expression, ParentCtx};
 use crate::langtype::{NativeClass, Type};
@@ -236,6 +236,7 @@ pub struct SubComponent {
     /// The initial value or binding for properties.
     /// This is ordered in the order they must be set.
     pub property_init: Vec<(PropertyReference, BindingExpression)>,
+    pub change_callbacks: Vec<(PropertyReference, MutExpression)>,
     /// The animation for properties which are animated
     pub animations: HashMap<PropertyReference, Expression>,
     pub two_way_bindings: Vec<(PropertyReference, PropertyReference)>,
@@ -251,6 +252,9 @@ pub struct SubComponent {
 
     /// Maps (item_index, property) to an expression
     pub accessible_prop: BTreeMap<(u32, String), MutExpression>,
+
+    /// Maps item index to a list of encoded element infos of the element  (type name, qualified ids).
+    pub element_infos: BTreeMap<u32, String>,
 
     pub prop_analysis: HashMap<PropertyReference, PropAnalysis>,
 }
@@ -318,17 +322,22 @@ pub struct PublicComponent {
     pub public_properties: PublicProperties,
     pub private_properties: PrivateProperties,
     pub item_tree: ItemTree,
+}
+
+#[derive(Debug)]
+pub struct CompilationUnit {
+    pub public_components: Vec<PublicComponent>,
     pub sub_components: Vec<Rc<SubComponent>>,
     pub globals: Vec<GlobalComponent>,
 }
 
-impl PublicComponent {
+impl CompilationUnit {
     pub fn for_each_sub_components<'a>(
         &'a self,
         visitor: &mut dyn FnMut(&'a SubComponent, &EvaluationContext<'_>),
     ) {
         fn visit_component<'a>(
-            root: &'a PublicComponent,
+            root: &'a CompilationUnit,
             c: &'a SubComponent,
             visitor: &mut dyn FnMut(&'a SubComponent, &EvaluationContext<'_>),
             parent: Option<ParentCtx<'_>>,
@@ -350,7 +359,9 @@ impl PublicComponent {
         for c in &self.sub_components {
             visit_component(self, c, visitor, None);
         }
-        visit_component(self, &self.item_tree.root, visitor, None);
+        for p in &self.public_components {
+            visit_component(self, &p.item_tree.root, visitor, None);
+        }
     }
 
     pub fn for_each_expression<'a>(
@@ -371,6 +382,9 @@ impl PublicComponent {
             }
             for i in sc.geometries.iter().flatten() {
                 visitor(i, ctx);
+            }
+            for (_, e) in sc.change_callbacks.iter() {
+                visitor(e, ctx);
             }
         });
         for g in &self.globals {

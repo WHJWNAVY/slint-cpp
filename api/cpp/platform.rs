@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use alloc::rc::Rc;
 #[cfg(not(feature = "std"))]
@@ -252,6 +252,11 @@ impl Platform for CppPlatform {
         let status = unsafe { (self.clipboard_text)(self.user_data, &mut out_text, clipboard) };
         status.then(|| out_text.into())
     }
+
+    #[cfg(feature = "esp-println")]
+    fn debug_log(&self, arguments: core::fmt::Arguments) {
+        esp_println::println!("{}", arguments);
+    }
 }
 
 struct CppEventLoopProxy {
@@ -350,8 +355,10 @@ pub unsafe extern "C" fn slint_platform_task_run(event: PlatformTaskOpaque) {
 mod software_renderer {
     use super::*;
     type SoftwareRendererOpaque = *const c_void;
-    use i_slint_core::graphics::{IntRect, Rgb8Pixel};
-    use i_slint_core::software_renderer::{RepaintBufferType, Rgb565Pixel, SoftwareRenderer};
+    use i_slint_core::graphics::Rgb8Pixel;
+    use i_slint_core::software_renderer::{
+        PhysicalRegion, RepaintBufferType, Rgb565Pixel, SoftwareRenderer,
+    };
 
     #[no_mangle]
     pub unsafe extern "C" fn slint_software_renderer_new(
@@ -378,12 +385,10 @@ mod software_renderer {
         buffer: *mut Rgb8Pixel,
         buffer_len: usize,
         pixel_stride: usize,
-    ) -> IntRect {
+    ) -> PhysicalRegion {
         let buffer = core::slice::from_raw_parts_mut(buffer, buffer_len);
         let renderer = &*(r as *const SoftwareRenderer);
-        let r = renderer.render(buffer, pixel_stride);
-        let (orig, size) = (r.bounding_box_origin(), r.bounding_box_size());
-        i_slint_core::graphics::euclid::rect(orig.x, orig.y, size.width as i32, size.height as i32)
+        renderer.render(buffer, pixel_stride)
     }
 
     #[no_mangle]
@@ -392,15 +397,92 @@ mod software_renderer {
         buffer: *mut u16,
         buffer_len: usize,
         pixel_stride: usize,
-    ) -> IntRect {
+    ) -> PhysicalRegion {
         let buffer = core::slice::from_raw_parts_mut(buffer as *mut Rgb565Pixel, buffer_len);
         let renderer = &*(r as *const SoftwareRenderer);
-        let r = renderer.render(buffer, pixel_stride);
-        let (orig, size) = (r.bounding_box_origin(), r.bounding_box_size());
-        i_slint_core::graphics::euclid::rect(orig.x, orig.y, size.width as i32, size.height as i32)
+        renderer.render(buffer, pixel_stride)
     }
 
     #[cfg(feature = "experimental")]
+    #[no_mangle]
+    pub unsafe extern "C" fn slint_software_renderer_render_by_line_rgb565(
+        r: SoftwareRendererOpaque,
+        process_line_fn: extern "C" fn(
+            *mut core::ffi::c_void,
+            usize,
+            usize,
+            usize,
+            extern "C" fn(*const core::ffi::c_void, *mut u16, usize),
+            *const core::ffi::c_void,
+        ),
+        user_data: *mut core::ffi::c_void,
+    ) -> PhysicalRegion {
+        struct Rgb565Processor {
+            process_line_fn: extern "C" fn(
+                *mut core::ffi::c_void,
+                usize,
+                usize,
+                usize,
+                extern "C" fn(*const core::ffi::c_void, *mut u16, usize),
+                *const core::ffi::c_void,
+            ),
+            user_data: *mut core::ffi::c_void,
+        }
+
+        impl i_slint_core::software_renderer::LineBufferProvider for Rgb565Processor {
+            type TargetPixel = Rgb565Pixel;
+            fn process_line(
+                &mut self,
+                line: usize,
+                range: core::ops::Range<usize>,
+                render_fn: impl FnOnce(&mut [Rgb565Pixel]),
+            ) {
+                self.cpp_process_line(line, range, render_fn);
+            }
+        }
+
+        impl Rgb565Processor {
+            fn cpp_process_line<RenderFn: FnOnce(&mut [Rgb565Pixel])>(
+                &mut self,
+                line: usize,
+                range: core::ops::Range<usize>,
+                render_fn: RenderFn,
+            ) {
+                let mut render_fn = Some(render_fn);
+                let render_fn_ptr =
+                    &mut render_fn as *mut Option<RenderFn> as *const core::ffi::c_void;
+
+                extern "C" fn cpp_render_line_callback<RenderFn: FnOnce(&mut [Rgb565Pixel])>(
+                    render_fn_ptr: *const core::ffi::c_void,
+                    line_start: *mut u16,
+                    len: usize,
+                ) {
+                    let line_slice = unsafe {
+                        core::slice::from_raw_parts_mut(line_start as *mut Rgb565Pixel, len)
+                    };
+                    let render_fn =
+                        unsafe { (*(render_fn_ptr as *mut Option<RenderFn>)).take().unwrap() };
+                    render_fn(line_slice);
+                }
+
+                (self.process_line_fn)(
+                    self.user_data,
+                    line,
+                    range.start,
+                    range.end,
+                    cpp_render_line_callback::<RenderFn>,
+                    render_fn_ptr,
+                );
+            }
+        }
+
+        let renderer = &*(r as *const SoftwareRenderer);
+
+        let processor = Rgb565Processor { process_line_fn, user_data };
+
+        renderer.render_by_line(processor)
+    }
+
     #[no_mangle]
     pub unsafe extern "C" fn slint_software_renderer_set_rendering_rotation(
         r: SoftwareRendererOpaque,
@@ -429,18 +511,34 @@ mod software_renderer {
 pub mod skia {
     use super::*;
     use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
+    use std::rc::Rc;
 
-    struct CppRawHandle(RawWindowHandle, RawDisplayHandle);
+    struct RawHandlePair((RawWindowHandle, RawDisplayHandle));
 
-    // the raw handle type are #[non_exhaustive], so they can't be initialize with the convenient syntax. Work that around.
-    macro_rules! init_raw {
-        ($ty:ty { $($var:ident),* }) => {
-            {
-                let mut h = <$ty>::empty();
-                $(h.$var = $var;)*
-                h
-            }
-        };
+    impl raw_window_handle::HasDisplayHandle for RawHandlePair {
+        fn display_handle(
+            &self,
+        ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+            // Safety: It is assumed that the C++ side keeps the window/display handles alive.
+            Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(self.0 .1) })
+        }
+    }
+
+    impl raw_window_handle::HasWindowHandle for RawHandlePair {
+        fn window_handle(
+            &self,
+        ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+            // Safety: It is assumed that the C++ side keeps the window/display handles alive.
+            Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(self.0 .0) })
+        }
+    }
+
+    struct CppRawHandle(Rc<RawHandlePair>);
+
+    impl From<(RawWindowHandle, RawDisplayHandle)> for CppRawHandle {
+        fn from(pair: (RawWindowHandle, RawDisplayHandle)) -> Self {
+            Self(Rc::new(RawHandlePair(pair)))
+        }
     }
 
     type CppRawHandleOpaque = *const c_void;
@@ -448,15 +546,14 @@ pub mod skia {
     #[no_mangle]
     pub unsafe extern "C" fn slint_new_raw_window_handle_win32(
         hwnd: *mut c_void,
-        hinstance: *mut c_void,
+        _hinstance: *mut c_void,
     ) -> CppRawHandleOpaque {
-        let handle = CppRawHandle(
-            RawWindowHandle::Win32(init_raw!(raw_window_handle::Win32WindowHandle {
-                hwnd,
-                hinstance
-            })),
-            RawDisplayHandle::Windows(raw_window_handle::WindowsDisplayHandle::empty()),
-        );
+        let handle = CppRawHandle::from((
+            RawWindowHandle::Win32(raw_window_handle::Win32WindowHandle::new(
+                (hwnd as isize).try_into().expect("C++: NativeWindowHandle created with null hwnd"),
+            )),
+            RawDisplayHandle::Windows(raw_window_handle::WindowsDisplayHandle::new()),
+        ));
         Box::into_raw(Box::new(handle)) as CppRawHandleOpaque
     }
 
@@ -468,10 +565,21 @@ pub mod skia {
         screen: core::ffi::c_int,
     ) -> CppRawHandleOpaque {
         use raw_window_handle::{XcbDisplayHandle, XcbWindowHandle};
-        let handle = CppRawHandle(
-            RawWindowHandle::Xcb(init_raw!(XcbWindowHandle { window, visual_id })),
-            RawDisplayHandle::Xcb(init_raw!(XcbDisplayHandle { connection, screen })),
-        );
+        let handle = CppRawHandle::from((
+            RawWindowHandle::Xcb({
+                let mut hnd = XcbWindowHandle::new(
+                    window
+                        .try_into()
+                        .expect("C++: NativeWindowHandle created with null xcb window handle"),
+                );
+                hnd.visual_id = visual_id.try_into().ok();
+                hnd
+            }),
+            RawDisplayHandle::Xcb(XcbDisplayHandle::new(
+                Some(core::ptr::NonNull::new_unchecked(connection)),
+                screen,
+            )),
+        ));
         Box::into_raw(Box::new(handle)) as CppRawHandleOpaque
     }
 
@@ -483,10 +591,17 @@ pub mod skia {
         screen: core::ffi::c_int,
     ) -> CppRawHandleOpaque {
         use raw_window_handle::{XlibDisplayHandle, XlibWindowHandle};
-        let handle = CppRawHandle(
-            RawWindowHandle::Xlib(init_raw!(XlibWindowHandle { window, visual_id })),
-            RawDisplayHandle::Xlib(init_raw!(XlibDisplayHandle { display, screen })),
-        );
+        let handle = CppRawHandle::from((
+            RawWindowHandle::Xlib({
+                let mut hnd = XlibWindowHandle::new(window);
+                hnd.visual_id = visual_id;
+                hnd
+            }),
+            RawDisplayHandle::Xlib(XlibDisplayHandle::new(
+                Some(core::ptr::NonNull::new_unchecked(display)),
+                screen,
+            )),
+        ));
         Box::into_raw(Box::new(handle)) as CppRawHandleOpaque
     }
 
@@ -496,23 +611,29 @@ pub mod skia {
         display: *mut c_void,
     ) -> CppRawHandleOpaque {
         use raw_window_handle::{WaylandDisplayHandle, WaylandWindowHandle};
-        let handle = CppRawHandle(
-            RawWindowHandle::Wayland(init_raw!(WaylandWindowHandle { surface })),
-            RawDisplayHandle::Wayland(init_raw!(WaylandDisplayHandle { display })),
-        );
+        let handle = CppRawHandle::from((
+            RawWindowHandle::Wayland(WaylandWindowHandle::new(core::ptr::NonNull::new_unchecked(
+                surface,
+            ))),
+            RawDisplayHandle::Wayland(WaylandDisplayHandle::new(
+                core::ptr::NonNull::new_unchecked(display),
+            )),
+        ));
         Box::into_raw(Box::new(handle)) as CppRawHandleOpaque
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn slint_new_raw_window_handle_appkit(
         ns_view: *mut c_void,
-        ns_window: *mut c_void,
+        _ns_window: *mut c_void,
     ) -> CppRawHandleOpaque {
         use raw_window_handle::{AppKitDisplayHandle, AppKitWindowHandle};
-        let handle = CppRawHandle(
-            RawWindowHandle::AppKit(init_raw!(AppKitWindowHandle { ns_view, ns_window })),
-            RawDisplayHandle::AppKit(AppKitDisplayHandle::empty()),
-        );
+        let handle = CppRawHandle::from((
+            RawWindowHandle::AppKit(AppKitWindowHandle::new(core::ptr::NonNull::new_unchecked(
+                ns_view,
+            ))),
+            RawDisplayHandle::AppKit(AppKitDisplayHandle::new()),
+        ));
         Box::into_raw(Box::new(handle)) as CppRawHandleOpaque
     }
 
@@ -531,21 +652,10 @@ pub mod skia {
     ) -> SkiaRendererOpaque {
         let handle = &*(handle_opaque as *const CppRawHandle);
 
-        // Safety: This is safe because the handle remains valid; the next rwh release provides `new()` without unsafe.
-        let active_handle = unsafe { raw_window_handle::ActiveHandle::new_unchecked() };
-
-        // Safety: the C++ code should ensure that the handle is valid
-        let (window_handle, display_handle) = unsafe {
-            (
-                raw_window_handle::WindowHandle::borrow_raw(handle.0, active_handle),
-                raw_window_handle::DisplayHandle::borrow_raw(handle.1),
-            )
-        };
-
         let boxed_renderer: Box<SkiaRenderer> = Box::new(
             SkiaRenderer::new(
-                window_handle,
-                display_handle,
+                handle.0.clone(),
+                handle.0.clone(),
                 PhysicalSize { width: size.width, height: size.height },
             )
             .unwrap(),

@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use cocoa::{appkit::NSView, base::id as cocoa_id};
 use core_graphics_types::geometry::CGSize;
@@ -8,10 +8,10 @@ use i_slint_core::api::PhysicalSize as PhysicalWindowSize;
 use metal::MTLPixelFormat;
 use objc::{rc::autoreleasepool, runtime::YES};
 
-use raw_window_handle::HasRawWindowHandle;
 use skia_safe::gpu::mtl;
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 /// This surface renders into the given window using Metal. The provided display argument
 /// is ignored, as it has no meaning on macOS.
@@ -23,8 +23,8 @@ pub struct MetalSurface {
 
 impl super::Surface for MetalSurface {
     fn new(
-        window_handle: raw_window_handle::WindowHandle<'_>,
-        _display_handle: raw_window_handle::DisplayHandle<'_>,
+        window_handle: Rc<dyn raw_window_handle::HasWindowHandle>,
+        _display_handle: Rc<dyn raw_window_handle::HasDisplayHandle>,
         size: PhysicalWindowSize,
     ) -> Result<Self, i_slint_core::platform::PlatformError> {
         let device = metal::Device::system_default()
@@ -39,16 +39,23 @@ impl super::Surface for MetalSurface {
         layer.set_drawable_size(CGSize::new(size.width as f64, size.height as f64));
 
         unsafe {
-            let view = match window_handle.raw_window_handle() {
+            let view = match window_handle
+                .window_handle()
+                .map_err(|e| format!("Error obtaining window handle for skia metal renderer: {e}"))?
+                .as_raw()
+            {
                 raw_window_handle::RawWindowHandle::AppKit(
                     raw_window_handle::AppKitWindowHandle { ns_view, .. },
-                ) => ns_view,
+                ) => ns_view.as_ptr(),
                 _ => {
                     return Err("Skia Renderer: Metal surface is only supported with AppKit".into())
                 }
             } as cocoa_id;
             view.setWantsLayer(YES);
             view.setLayer(layer.as_ref() as *const _ as _);
+            view.setLayerContentsPlacement(
+                cocoa::appkit::NSViewLayerContentsPlacement::NSViewLayerContentsPlacementTopLeft,
+            );
         }
 
         let command_queue = device.new_command_queue();
@@ -57,11 +64,11 @@ impl super::Surface for MetalSurface {
             mtl::BackendContext::new(
                 device.as_ptr() as mtl::Handle,
                 command_queue.as_ptr() as mtl::Handle,
-                std::ptr::null(),
             )
         };
 
-        let gr_context = skia_safe::gpu::DirectContext::new_metal(&backend, None).unwrap().into();
+        let gr_context =
+            skia_safe::gpu::direct_contexts::make_metal(&backend, None).unwrap().into();
 
         Ok(Self { command_queue, layer, gr_context })
     }
@@ -76,6 +83,10 @@ impl super::Surface for MetalSurface {
     ) -> Result<(), i_slint_core::platform::PlatformError> {
         self.layer.set_drawable_size(CGSize::new(size.width as f64, size.height as f64));
         Ok(())
+    }
+
+    fn set_scale_factor(&self, scale_factor: f32) {
+        self.layer.set_contents_scale(scale_factor.into());
     }
 
     fn render(
@@ -103,7 +114,7 @@ impl super::Surface for MetalSurface {
                 let texture_info =
                     mtl::TextureInfo::new(drawable.texture().as_ptr() as mtl::Handle);
 
-                let backend_render_target = skia_safe::gpu::BackendRenderTarget::new_metal(
+                let backend_render_target = skia_safe::gpu::backend_render_targets::make_mtl(
                     (size.width as i32, size.height as i32),
                     &texture_info,
                 );

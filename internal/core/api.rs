@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 /*!
 This module contains types that are public and re-exported in the slint-rs as well as the slint-interpreter crate as public API.
@@ -324,6 +324,22 @@ pub enum SetRenderingNotifierError {
     AlreadySet,
 }
 
+impl core::fmt::Display for SetRenderingNotifierError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Unsupported => {
+                f.write_str("The rendering backend does not support rendering notifiers.")
+            }
+            Self::AlreadySet => f.write_str(
+                "There is already a rendering notifier set, multiple notifiers are not supported.",
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for SetRenderingNotifierError {}
+
 /// This struct represents a persistent handle to a window and implements the
 /// [`raw_window_handle_06::HasWindowHandle`] and [`raw_window_handle_06::HasDisplayHandle`]
 /// traits for accessing exposing raw window and display handles.
@@ -619,7 +635,7 @@ pub use crate::SharedString;
 /// The following example of `.slint` markup defines a global singleton called `Palette`, exports
 /// it and modifies it from Rust code:
 /// ```rust
-/// # i_slint_backend_testing::init();
+/// # i_slint_backend_testing::init_no_event_loop();
 /// slint::slint!{
 /// export global Palette {
 ///     in property<color> foreground-color;
@@ -800,7 +816,7 @@ mod weak_handle {
         ///
         /// # Example
         /// ```rust
-        /// # i_slint_backend_testing::init();
+        /// # i_slint_backend_testing::init_no_event_loop();
         /// slint::slint! { export component MyApp inherits Window { in property <int> foo; /* ... */ } }
         /// let handle = MyApp::new().unwrap();
         /// let handle_weak = handle.as_weak();
@@ -856,7 +872,7 @@ pub use weak_handle::*;
 /// # Example
 /// ```rust
 /// slint::slint! { export component MyApp inherits Window { in property <int> foo; /* ... */ } }
-/// # i_slint_backend_testing::init();
+/// # i_slint_backend_testing::init_no_event_loop();
 /// let handle = MyApp::new().unwrap();
 /// let handle_weak = handle.as_weak();
 /// # return; // don't run the event loop in examples
@@ -910,6 +926,9 @@ impl core::fmt::Display for EventLoopError {
         }
     }
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for EventLoopError {}
 
 /// The platform encountered a fatal error.
 ///

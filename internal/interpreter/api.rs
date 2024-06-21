@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use i_slint_compiler::diagnostics::SourceFileVersion;
 use i_slint_compiler::langtype::Type as LangType;
@@ -812,6 +812,20 @@ impl ComponentDefinition {
         })
     }
 
+    /// Returns the names of all publicly declared functions.
+    pub fn functions(&self) -> impl Iterator<Item = String> + '_ {
+        // We create here a 'static guard, because unfortunately the returned type would be restricted to the guard lifetime
+        // which is not required, but this is safe because there is only one instance of the unerased type
+        let guard = unsafe { generativity::Guard::new(generativity::Id::new()) };
+        self.inner.unerase(guard).properties().filter_map(|(prop_name, prop_type)| {
+            if matches!(prop_type, LangType::Function { .. }) {
+                Some(prop_name)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Returns the names of all exported global singletons
     ///
     /// **Note:** Only globals that are exported or re-exported from the main .slint file will
@@ -873,6 +887,22 @@ impl ComponentDefinition {
         })
     }
 
+    /// List of publicly declared functions in the exported global singleton specified by its name.
+    pub fn global_functions(&self, global_name: &str) -> Option<impl Iterator<Item = String> + '_> {
+        // We create here a 'static guard, because unfortunately the returned type would be restricted to the guard lifetime
+        // which is not required, but this is safe because there is only one instance of the unerased type
+        let guard = unsafe { generativity::Guard::new(generativity::Id::new()) };
+        self.inner.unerase(guard).global_properties(global_name).map(|iter| {
+            iter.filter_map(|(prop_name, prop_type)| {
+                if matches!(prop_type, LangType::Function { .. }) {
+                    Some(prop_name)
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
     /// The name of this Component as written in the .slint file
     pub fn name(&self) -> &str {
         // We create here a 'static guard, because unfortunately the returned type would be restricted to the guard lifetime
@@ -896,6 +926,25 @@ impl ComponentDefinition {
     pub fn type_loader(&self) -> std::rc::Rc<i_slint_compiler::typeloader::TypeLoader> {
         let guard = unsafe { generativity::Guard::new(generativity::Id::new()) };
         self.inner.unerase(guard).type_loader.get().unwrap().clone()
+    }
+
+    /// Return the `TypeLoader` used when parsing the code in the interpreter in
+    /// a state before most passes were applied by the compiler.
+    ///
+    /// Each returned type loader is a deep copy of the entire state connected to it,
+    /// so this is a fairly expensive function!
+    ///
+    /// WARNING: this is not part of the public API
+    #[cfg(feature = "highlight")]
+    pub fn raw_type_loader(&self) -> Option<i_slint_compiler::typeloader::TypeLoader> {
+        let guard = unsafe { generativity::Guard::new(generativity::Id::new()) };
+        self.inner
+            .unerase(guard)
+            .raw_type_loader
+            .get()
+            .unwrap()
+            .as_ref()
+            .and_then(|tl| i_slint_compiler::typeloader::snapshot(tl))
     }
 }
 
@@ -937,7 +986,7 @@ impl ComponentInstance {
     /// ## Examples
     ///
     /// ```
-    /// # i_slint_backend_testing::init();
+    /// # i_slint_backend_testing::init_no_event_loop();
     /// use slint_interpreter::{ComponentDefinition, ComponentCompiler, Value, SharedString};
     /// let code = r#"
     ///     export component MyWin inherits Window {
@@ -1004,7 +1053,7 @@ impl ComponentInstance {
     /// ## Examples
     ///
     /// ```
-    /// # i_slint_backend_testing::init();
+    /// # i_slint_backend_testing::init_no_event_loop();
     /// use slint_interpreter::{ComponentDefinition, ComponentCompiler, Value, SharedString, ComponentHandle};
     /// use core::convert::TryInto;
     /// let code = r#"
@@ -1060,7 +1109,7 @@ impl ComponentInstance {
     /// ## Examples
     ///
     /// ```
-    /// # i_slint_backend_testing::init();
+    /// # i_slint_backend_testing::init_no_event_loop();
     /// use slint_interpreter::{ComponentDefinition, ComponentCompiler, Value, SharedString};
     /// let code = r#"
     ///     global Glob {
@@ -1115,7 +1164,7 @@ impl ComponentInstance {
     /// ## Examples
     ///
     /// ```
-    /// # i_slint_backend_testing::init();
+    /// # i_slint_backend_testing::init_no_event_loop();
     /// use slint_interpreter::{ComponentDefinition, ComponentCompiler, Value, SharedString};
     /// use core::convert::TryInto;
     /// let code = r#"
@@ -1387,7 +1436,7 @@ pub mod testing {
 
 #[test]
 fn component_definition_properties() {
-    i_slint_backend_testing::init();
+    i_slint_backend_testing::init_no_event_loop();
     let mut compiler = ComponentCompiler::default();
     compiler.set_style("fluent".into());
     let comp_def = spin_on::spin_on(
@@ -1435,7 +1484,7 @@ fn component_definition_properties() {
 
 #[test]
 fn component_definition_properties2() {
-    i_slint_backend_testing::init();
+    i_slint_backend_testing::init_no_event_loop();
     let mut compiler = ComponentCompiler::default();
     compiler.set_style("fluent".into());
     let comp_def = spin_on::spin_on(
@@ -1486,7 +1535,7 @@ fn component_definition_properties2() {
 
 #[test]
 fn globals() {
-    i_slint_backend_testing::init();
+    i_slint_backend_testing::init_no_event_loop();
     let mut compiler = ComponentCompiler::default();
     compiler.set_style("fluent".into());
     let definition = spin_on::spin_on(
@@ -1604,7 +1653,7 @@ fn globals() {
 
 #[test]
 fn call_functions() {
-    i_slint_backend_testing::init();
+    i_slint_backend_testing::init_no_event_loop();
     let mut compiler = ComponentCompiler::default();
     compiler.set_style("fluent".into());
     let definition = spin_on::spin_on(
@@ -1627,8 +1676,13 @@ fn call_functions() {
             .into(),
             "".into(),
         ),
-    );
-    let instance = definition.unwrap().create().unwrap();
+    )
+    .unwrap();
+
+    assert_eq!(definition.functions().collect::<Vec<_>>(), ["foo-bar"]);
+    assert_eq!(definition.global_functions("Gl").unwrap().collect::<Vec<_>>(), ["foo-bar"]);
+
+    let instance = definition.create().unwrap();
 
     assert_eq!(
         instance.invoke("foo_bar", &[Value::Number(3.), Value::Number(4.)]),
@@ -1650,7 +1704,7 @@ fn call_functions() {
 
 #[test]
 fn component_definition_struct_properties() {
-    i_slint_backend_testing::init();
+    i_slint_backend_testing::init_no_event_loop();
     let mut compiler = ComponentCompiler::default();
     compiler.set_style("fluent".into());
     let comp_def = spin_on::spin_on(
@@ -1701,7 +1755,7 @@ fn component_definition_struct_properties() {
 #[test]
 fn component_definition_model_properties() {
     use i_slint_core::model::*;
-    i_slint_backend_testing::init();
+    i_slint_backend_testing::init_no_event_loop();
     let mut compiler = ComponentCompiler::default();
     compiler.set_style("fluent".into());
     let comp_def = spin_on::spin_on(compiler.build_from_source(

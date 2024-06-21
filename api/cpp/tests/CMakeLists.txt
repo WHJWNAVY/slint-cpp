@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 FetchContent_Declare(
     Catch2
@@ -47,8 +47,13 @@ if(NOT SLINT_FEATURE_FREESTANDING)
 endif()
 slint_test(models)
 
+if(SLINT_FEATURE_EXPERIMENTAL AND SLINT_FEATURE_TESTING)
+    slint_test(testing)
+endif()
+
 if(SLINT_FEATURE_COMPILER OR SLINT_COMPILER)
     add_subdirectory(multiple-includes)
+    add_subdirectory(libraries)
 endif()
 
 slint_test(platform_eventloop)

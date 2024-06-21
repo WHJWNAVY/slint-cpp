@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //!
 //! Tool to change the syntax or reformat a .slint file
@@ -222,7 +222,7 @@ fn visit_node(
                     .borrow()
                     .children
                     .iter()
-                    .find(|c| c.borrow().debug.first().map_or(false, |n| n.0.node == node.node))
+                    .find(|c| c.borrow().debug.first().map_or(false, |n| n.node.node == node.node))
                     .cloned()
             } else if let Some(parent_co) = &state.current_component {
                 if node.parent().map_or(false, |n| n.kind() == SyntaxKind::Component) {

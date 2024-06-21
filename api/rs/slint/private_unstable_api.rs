@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Module containing the private api that is used by the generated code.
 //!
@@ -165,6 +165,10 @@ pub fn init_translations(domain: &str, dirname: impl Into<std::path::PathBuf>) {
     i_slint_core::translations::gettext_bindtextdomain(domain, dirname.into()).unwrap()
 }
 
+pub fn use_24_hour_format() -> bool {
+    i_slint_core::date_time::use_24_hour_format()
+}
+
 /// internal re_exports used by the macro generated
 pub mod re_exports {
     pub use alloc::boxed::Box;
@@ -179,9 +183,12 @@ pub mod re_exports {
     // This one is empty when Qt is not available, which triggers a warning
     #[allow(unused_imports)]
     pub use i_slint_backend_selector::native_widgets::*;
-    pub use i_slint_core::accessibility::AccessibleStringProperty;
+    pub use i_slint_core::accessibility::{
+        AccessibilityAction, AccessibleStringProperty, SupportedAccessibilityAction,
+    };
     pub use i_slint_core::animations::{animation_tick, EasingCurve};
     pub use i_slint_core::callbacks::Callback;
+    pub use i_slint_core::date_time::*;
     pub use i_slint_core::graphics::*;
     pub use i_slint_core::input::{
         key_codes::Key, FocusEvent, InputEventResult, KeyEvent, KeyEventResult, KeyboardModifiers,
@@ -201,7 +208,9 @@ pub mod re_exports {
         logical_position_to_api, LogicalLength, LogicalPoint, LogicalRect,
     };
     pub use i_slint_core::model::*;
-    pub use i_slint_core::properties::{set_state_binding, Property, PropertyTracker, StateInfo};
+    pub use i_slint_core::properties::{
+        set_state_binding, ChangeTracker, Property, PropertyTracker, StateInfo,
+    };
     pub use i_slint_core::slice::Slice;
     pub use i_slint_core::window::{
         InputMethodRequest, WindowAdapter, WindowAdapterRc, WindowInner,

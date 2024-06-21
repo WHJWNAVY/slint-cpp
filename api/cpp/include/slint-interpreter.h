@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #pragma once
 
@@ -192,10 +192,7 @@ public:
     }
     /// Returns an iterator that when compared with an iterator returned by begin() can be
     /// used to detect when all fields have been visited.
-    iterator end() const
-    {
-        return iterator();
-    }
+    iterator end() const { return iterator(); }
 
     /// Returns the value of the field with the given \a name; Returns an std::optional without
     /// value if the field does not exist.
@@ -405,8 +402,8 @@ private:
 
 inline Value::Value(const slint::SharedVector<Value> &array)
     : inner(cbindgen_private::slint_interpreter_value_new_array_model(
-            reinterpret_cast<const slint::SharedVector<slint::cbindgen_private::Value *> *>(
-                    &array)))
+              reinterpret_cast<const slint::SharedVector<slint::cbindgen_private::Value *> *>(
+                      &array)))
 {
 }
 
@@ -692,22 +689,21 @@ public:
     ///
     /// Note: Since the ComponentInstance holds the handler, the handler itself should not
     /// capture a strong reference to the instance.
-    // clang-format off
     template<std::invocable<std::span<const Value>> F>
         requires(std::is_convertible_v<std::invoke_result_t<F, std::span<const Value>>, Value>)
     auto set_callback(std::string_view name, F callback) const -> bool
-    // clang-format on
     {
         using namespace cbindgen_private;
-        auto actual_cb = [](void *data,
-                            cbindgen_private::Slice<cbindgen_private::Box<cbindgen_private::Value>>
-                                    arg) {
-            std::span<const Value> args_view { reinterpret_cast<const Value *>(arg.ptr), arg.len };
-            Value r = (*reinterpret_cast<F *>(data))(args_view);
-            auto inner = r.inner;
-            r.inner = cbindgen_private::slint_interpreter_value_new();
-            return inner;
-        };
+        auto actual_cb =
+                [](void *data,
+                   cbindgen_private::Slice<cbindgen_private::Box<cbindgen_private::Value>> arg) {
+                    std::span<const Value> args_view { reinterpret_cast<const Value *>(arg.ptr),
+                                                       arg.len };
+                    Value r = (*reinterpret_cast<F *>(data))(args_view);
+                    auto inner = r.inner;
+                    r.inner = cbindgen_private::slint_interpreter_value_new();
+                    return inner;
+                };
         return cbindgen_private::slint_interpreter_component_instance_set_callback(
                 inner(), slint::private_api::string_to_slice(name), actual_cb,
                 new F(std::move(callback)), [](void *data) { delete reinterpret_cast<F *>(data); });
@@ -773,15 +769,16 @@ public:
     bool set_global_callback(std::string_view global, std::string_view name, F callback) const
     {
         using namespace cbindgen_private;
-        auto actual_cb = [](void *data,
-                            cbindgen_private::Slice<cbindgen_private::Box<cbindgen_private::Value>>
-                                    arg) {
-            std::span<const Value> args_view { reinterpret_cast<const Value *>(arg.ptr), arg.len };
-            Value r = (*reinterpret_cast<F *>(data))(args_view);
-            auto inner = r.inner;
-            r.inner = cbindgen_private::slint_interpreter_value_new();
-            return inner;
-        };
+        auto actual_cb =
+                [](void *data,
+                   cbindgen_private::Slice<cbindgen_private::Box<cbindgen_private::Value>> arg) {
+                    std::span<const Value> args_view { reinterpret_cast<const Value *>(arg.ptr),
+                                                       arg.len };
+                    Value r = (*reinterpret_cast<F *>(data))(args_view);
+                    auto inner = r.inner;
+                    r.inner = cbindgen_private::slint_interpreter_value_new();
+                    return inner;
+                };
         return cbindgen_private::slint_interpreter_component_instance_set_global_callback(
                 inner(), slint::private_api::string_to_slice(global),
                 slint::private_api::string_to_slice(name), actual_cb, new F(std::move(callback)),
@@ -886,6 +883,15 @@ public:
         return callbacks;
     }
 
+    /// Returns a vector of strings that describe the list of public functions that can be invoked
+    /// using ComponentInstance::invoke.
+    slint::SharedVector<slint::SharedString> functions() const
+    {
+        slint::SharedVector<slint::SharedString> functions;
+        cbindgen_private::slint_interpreter_component_definition_functions(&inner, &functions);
+        return functions;
+    }
+
     /// Returns the name of this Component as written in the .slint file
     slint::SharedString name() const
     {
@@ -924,6 +930,20 @@ public:
     {
         slint::SharedVector<slint::SharedString> names;
         if (cbindgen_private::slint_interpreter_component_definition_global_callbacks(
+                    &inner, slint::private_api::string_to_slice(global_name), &names)) {
+            return names;
+        }
+        return {};
+    }
+
+    /// Returns a vector of the names of the functions of the specified publicly exported global
+    /// singleton. An empty optional is returned if there exists no exported global singleton
+    /// under the specified name.
+    std::optional<slint::SharedVector<slint::SharedString>>
+    global_functions(std::string_view global_name) const
+    {
+        slint::SharedVector<slint::SharedString> names;
+        if (cbindgen_private::slint_interpreter_component_definition_global_functions(
                     &inner, slint::private_api::string_to_slice(global_name), &names)) {
             return names;
         }
@@ -1051,21 +1071,7 @@ public:
 };
 }
 
-namespace slint::testing {
-
-using cbindgen_private::KeyboardModifiers;
-
-/// Send a key events to the given component instance
-inline void send_keyboard_char(const slint::interpreter::ComponentInstance *component,
-                               const slint::SharedString &str, bool pressed)
-{
-    const cbindgen_private::WindowAdapterRcOpaque *win_ptr = nullptr;
-    cbindgen_private::slint_interpreter_component_instance_window(
-            reinterpret_cast<const cbindgen_private::ErasedItemTreeBox *>(component), &win_ptr);
-    cbindgen_private::slint_send_keyboard_char(
-            &str, pressed, reinterpret_cast<const cbindgen_private::WindowAdapterRc *>(win_ptr));
-}
-
+namespace slint::private_api::testing {
 /// Send a key events to the given component instance
 inline void send_keyboard_string_sequence(const slint::interpreter::ComponentInstance *component,
                                           const slint::SharedString &str)

@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Code to help with writing tests for the language server
 
@@ -25,8 +25,7 @@ pub fn loaded_document_cache(
     let mut dc = empty_document_cache();
 
     // Pre-load std-widgets.slint:
-    let mut diag = i_slint_compiler::diagnostics::BuildDiagnostics::default();
-    spin_on::spin_on(dc.documents.import_component("std-widgets.slint", "StyleMetrics", &mut diag));
+    spin_on::spin_on(dc.preload_builtins());
 
     let dummy_absolute_path =
         if cfg!(target_family = "windows") { "c://foo/bar.slint" } else { "/foo/bar.slint" };

@@ -1,7 +1,120 @@
-<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial -->
+<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0 -->
 
 # Changelog
 All notable changes to this project are documented in this file.
+
+## Unreleased
+
+### General
+
+ - Skia: Fix quality of control rendering when using `cache-rendering-hint: true;`
+ - Several compiler bugfixes (#5260, #5246, #5220, #5259, #5249)
+ - Android: fix cursor handle being visible despite inut loses focus (#5233)
+ - Android: fix keyboard poping up when application moved to foreground without input focus (#5235)
+ - Gettext translation: clear internal gettext cache when changing translations at runtime
+ - Interpreter: Track model lenght change when accessing a model out of bounds
+ - Interpreter: added API to obtain list of functions
+
+### Slint Language
+
+ - Emit a warning if PopupWindow is in a layout
+ - Added `resize-border` to Window
+
+### Widgets
+
+ - Added `placeholder-text` property to `TextEdit`.
+ - Fixed updating model of ComboBox does not change current-value
+ - Fixed set current-index of ComboBox to -1 does not reset current-value
+ - Fixed issue where the text of `SpinBox` is not updated after value is changed from outside
+ - Added `step-size` to `SpinBox`
+ - Added `TimePicker` and `DatePicker` widget.
+ - Fixed accessible value and actions on ProgressIndicator, Spinner, Spinbox, CheckBox, Switch
+
+### C++ API
+
+ - Added `LIBRARY_PATHS` multi-value argument to `slint_target_sources` that takes a list of
+   `name=path` items, to allow for the use of component libraries.
+
+### Rust API
+
+ - Added missing implementation of the `Error` for some of the errors
+ - allow all clippy warnings in generated code
+ - Add `slint::Image::image_buffer()` getter to obtain pixels for a `slint::Image` if available.
+
+### Node API
+
+ - Functions can now be invoked
+
+### LSP and tooling
+
+ - Added suggestion for imported globals in expression auto-completion
+ - Added ability to rename Component
+ - Design mode: only allow to move element within the same component.
+
+## [1.6.0] - 2024-05-13
+
+### General
+
+ - The minimum Rust version is now 1.73.
+ - When the Skia renderer is enabled at compile time, it is picked as the default at run-time.
+ - FemtoVG renderer: Fixed selection of italic font styles. (#5056)
+ - Fixed color animation involving transparency. (#5063)
+ - Android: Fixed support for Android 10 to 12 and Java 1.8.
+ - Android: Fixed build if the locale is not UTF-8.
+ - Android: Added cursor handle on TextInput and selection handle with cut/copy/paste menu.
+ - Android: added `backend-android-activity-06` feature.
+ - Software renderer: Dirty regions can now be composed of multiple rectangles.
+ - Added a function to mark all translations as dirty.
+
+### Slint Language
+
+ - Text: Added `stroke`, `stroke-width`, and `stroke-style` properties.
+ - Added `Colors.hsv()` method to create colors in the HSV color space.
+ - Added `to-hsv()` function to color.
+ - Throw an error when `rgb()` or `argb()` have too many arguments.
+ - Added support for `accessible-action-*`.
+ - Fixed insertion point of `@children` when it is not the last child. (#4935)
+ - Deprecated usage of internal `StyleMetrics` in the public API.
+ - Fixed compiler panic with state property change involving a state in a parent component. (#5038)
+ - Fixed interpreter overwriting property named `index`. (#4961)
+ - Fixed compiler panic when a callback aliases itself. (#4938)
+ - Fixed compiler panic when an init from a repeater is inlined into the parent component (#5146)
+ - Added `clear-focus()` function to focusable elements, to allow for programmatic focus clearing.
+
+### Widgets
+
+ - Palette: Added `color-scheme` in-out property for accessing the style's color scheme.
+ - Accessibility: Annotated more widgets with accessible properties and actions.
+ - Qt style: Fixed rendering of focused or hovered ComboBox and CheckBox.
+ - Qt style: Fixed widget that would react to every mouse button instead of only the left button.
+ - SpinBox: Fixed scroll direction.
+ - Allow scrolling through tabs.
+ - Updated TabWidget in Cosmic style.
+ - Added a `released` callback to `Slider`.
+ - Fixed text and selection color of TextEdit and LineEdit.
+ - Spinbox and Slider: The value now defaults to the minimum.
+
+### Rust API
+
+ - Added conversion of Color to and from HSV.
+ - Added getter to the `raw-window-handle` of a window using the `raw-window-handle-06` feature.
+
+### C++ API
+
+ - Workaround breaking change in the build with Rust 1.79 (see https://github.com/corrosion-rs/corrosion/issues/501)
+ - Added conversion of Color to and from HSV.
+ - Fixed code generation of functions that don't return.
+ - Fixed the `MapModel::reset` function. (#4968)
+ - Fixed compilation of the generated code when an animated brush property is set in a sling callback.
+ - Added include guard to the generated header.
+
+### LSP and tooling
+
+ - Design mode of the live preview can now drag into and from layout. With a drop marker when dragging an element.
+ - Fixed formatting of function declarations.
+ - Added `-L` command line args to `slint-lsp` to specify path of external libraries (#5144)
+ - VSCode extension highlights Slint code blocks in markdown files.
+ - `slint-viewer` will properly reload files saved with neovim, which renames and replaces files (#3641)
 
 ## [1.5.1] - 2024-03-20
 
@@ -1255,3 +1368,4 @@ as well as the [Rust migration guide for the `sixtyfps` crate](api/rs/slint/migr
 [1.4.1]: https://github.com/slint-ui/slint/releases/tag/v1.4.1
 [1.5.0]: https://github.com/slint-ui/slint/releases/tag/v1.5.0
 [1.5.1]: https://github.com/slint-ui/slint/releases/tag/v1.5.1
+[1.6.0]: https://github.com/slint-ui/slint/releases/tag/v1.6.0

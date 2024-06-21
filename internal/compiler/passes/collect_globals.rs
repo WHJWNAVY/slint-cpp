@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Passes that fills the root component used_types.globals
 
@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 /// Fill the root_component's used_types.globals
 pub fn collect_globals(doc: &Document, _diag: &mut BuildDiagnostics) {
-    doc.root_component.used_types.borrow_mut().globals.clear();
+    doc.used_types.borrow_mut().globals.clear();
     let mut set = HashSet::new();
     let mut sorted_globals = vec![];
     for (_, ty) in &*doc.exports {
@@ -25,7 +25,10 @@ pub fn collect_globals(doc: &Document, _diag: &mut BuildDiagnostics) {
         }
     }
     collect_in_component(&doc.root_component, &mut set, &mut sorted_globals);
-    doc.root_component.used_types.borrow_mut().globals = sorted_globals;
+    for component in &doc.used_types.borrow().sub_components {
+        collect_in_component(component, &mut set, &mut sorted_globals);
+    }
+    doc.used_types.borrow_mut().globals = sorted_globals;
 }
 
 fn collect_in_component(
@@ -42,7 +45,4 @@ fn collect_in_component(
         }
     };
     visit_all_named_references(component, &mut maybe_collect_global);
-    for component in &component.used_types.borrow().sub_components {
-        visit_all_named_references(component, &mut maybe_collect_global);
-    }
 }

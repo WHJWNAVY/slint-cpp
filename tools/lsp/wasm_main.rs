@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #![cfg(target_arch = "wasm32")]
 
@@ -11,10 +11,10 @@ pub mod lsp_ext;
 mod preview;
 pub mod util;
 
-use common::{LspToPreviewMessage, Result, VersionedUrl};
+use common::{DocumentCache, LspToPreviewMessage, Result, VersionedUrl};
 use i_slint_compiler::CompilerConfiguration;
 use js_sys::Function;
-pub use language::{Context, DocumentCache, RequestHandler};
+pub use language::{Context, RequestHandler};
 use lsp_types::Url;
 use serde::Serialize;
 use std::cell::RefCell;
@@ -217,6 +217,7 @@ pub fn create(
     Ok(SlintServer {
         ctx: Rc::new(Context {
             document_cache,
+            preview_config: RefCell::new(Default::default()),
             init_param,
             server_notifier,
             to_show: Default::default(),

@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use std::{collections::HashMap, iter::once, rc::Rc};
 
@@ -30,10 +30,11 @@ pub fn create_ui(style: String, experimental: bool) -> Result<PreviewUi, Platfor
         model
     });
 
-    ui.set_known_styles(style_model.into());
     ui.set_current_style(style.clone().into());
     ui.set_experimental(experimental);
+    ui.set_known_styles(style_model.into());
 
+    ui.on_add_new_component(super::add_new_component);
     ui.on_style_changed(super::change_style);
     ui.on_show_document(|file, line, column| {
         use lsp_types::{Position, Range};
@@ -46,7 +47,9 @@ pub fn create_ui(style: String, experimental: bool) -> Result<PreviewUi, Platfor
     ui.on_select_behind(super::element_selection::select_element_behind);
     ui.on_can_drop(super::can_drop_component);
     ui.on_drop(super::drop_component);
-    ui.on_selected_element_update_geometry(super::change_geometry_of_selected_element);
+    ui.on_selected_element_resize(super::resize_selected_element);
+    ui.on_selected_element_can_move_to(super::can_move_selected_element);
+    ui.on_selected_element_move(super::move_selected_element);
     ui.on_selected_element_delete(super::delete_selected_element);
 
     Ok(ui)

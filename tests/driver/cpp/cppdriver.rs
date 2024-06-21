@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use i_slint_compiler::{diagnostics::BuildDiagnostics, *};
 use std::error::Error;
@@ -26,7 +26,9 @@ pub fn test(testcase: &test_driver_lib::TestCase) -> Result<(), Box<dyn Error>> 
     let mut compiler_config = CompilerConfiguration::new(output_format.clone());
     compiler_config.include_paths = include_paths;
     compiler_config.library_paths = library_paths;
-    let (root_component, diag, _) =
+    compiler_config.style = testcase.requested_style.map(str::to_string);
+    compiler_config.debug_info = true;
+    let (root_component, diag, loader) =
         spin_on::spin_on(compile_syntax_node(syntax_node, diag, compiler_config));
 
     if diag.has_error() {
@@ -36,12 +38,23 @@ pub fn test(testcase: &test_driver_lib::TestCase) -> Result<(), Box<dyn Error>> 
 
     let mut generated_cpp: Vec<u8> = Vec::new();
 
-    generator::generate(output_format, &mut generated_cpp, &root_component)?;
+    generator::generate(
+        output_format,
+        &mut generated_cpp,
+        &root_component,
+        &loader.compiler_config,
+    )?;
 
     if diag.has_error() {
         let vec = diag.to_string_vec();
         return Err(vec.join("\n").into());
     }
+
+    // Remove the `#pragma once` as this is not going to be included and would produce a warning
+    // when compiling the generated code.
+    let hash_pos = generated_cpp.iter().position(|&b| b == b'#').unwrap();
+    assert_eq!(&generated_cpp[hash_pos..hash_pos + 12], b"#pragma once");
+    generated_cpp.drain(hash_pos..hash_pos + 12);
 
     generated_cpp.write_all(
         br"
@@ -51,8 +64,8 @@ pub fn test(testcase: &test_driver_lib::TestCase) -> Result<(), Box<dyn Error>> 
 #include <assert.h>
 #include <cmath>
 #include <iostream>
-#include <slint_testing.h>
-namespace slint_testing = slint::testing;
+#include <slint_tests_helpers.h>
+namespace slint_testing = slint::private_api::testing;
 ",
     )?;
     generated_cpp.write_all(b"int main() {\n    slint::testing::init();\n")?;

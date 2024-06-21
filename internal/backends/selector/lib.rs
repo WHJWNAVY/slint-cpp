@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #![doc = include_str!("README.md")]
 #![doc(html_logo_url = "https://slint.dev/logo/slint-logo-square-light.svg")]
@@ -133,5 +133,20 @@ cfg_if::cfg_if! {
 pub fn with_platform<R>(
     f: impl FnOnce(&dyn Platform) -> Result<R, PlatformError>,
 ) -> Result<R, PlatformError> {
-    i_slint_core::with_platform(create_backend, f)
+    let mut platform_created = false;
+    let result = i_slint_core::with_platform(
+        || {
+            let backend = create_backend();
+            platform_created = backend.is_ok();
+            backend
+        },
+        f,
+    );
+
+    #[cfg(feature = "system-testing")]
+    if result.is_ok() && platform_created {
+        i_slint_backend_testing::systest::init();
+    }
+
+    result
 }

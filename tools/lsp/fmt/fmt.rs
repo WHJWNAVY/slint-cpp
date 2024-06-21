@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use super::writer::TokenWriter;
 use i_slint_compiler::parser::{syntax_nodes, NodeOrToken, SyntaxKind, SyntaxNode};
@@ -521,6 +521,10 @@ fn format_function(
                 fold(n, writer, state)?;
                 whitespace_to(&mut sub, SyntaxKind::ReturnType, writer, state, " ")?;
             }
+            SyntaxKind::CodeBlock => {
+                state.insert_whitespace(" ");
+                fold(n, writer, state)?;
+            }
             _ => {
                 fold(n, writer, state)?;
             }
@@ -535,8 +539,7 @@ fn format_argument_declaration(
     writer: &mut impl TokenWriter,
     state: &mut FormatState,
 ) -> Result<(), std::io::Error> {
-    let mut sub = node.children_with_tokens();
-    while let Some(n) = sub.next() {
+    for n in node.children_with_tokens() {
         state.skip_all_whitespace = true;
         match n.kind() {
             SyntaxKind::Colon => {
@@ -714,12 +717,8 @@ fn format_codeblock(
         return Ok(());
     }
 
-    let prev_is_return_type =
-        node.prev_sibling().map(|s| s.kind() == SyntaxKind::ReturnType).unwrap_or(false);
-
     let mut sub = node.children_with_tokens();
-    let prefix_whitespace = if prev_is_return_type { " " } else { "" };
-    if !whitespace_to(&mut sub, SyntaxKind::LBrace, writer, state, prefix_whitespace)? {
+    if !whitespace_to(&mut sub, SyntaxKind::LBrace, writer, state, "")? {
         finish_node(sub, writer, state)?;
         return Ok(());
     }
@@ -1991,7 +1990,7 @@ export component MainWindow2 inherits Rectangle {
         }
         return x;
     }
-    function a(){
+    function a() {
         /* ddd */}
 }
 "#,

@@ -1,4 +1,5 @@
-<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial -->
+<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0 -->
+
 # Slint
 
 [![Component Registry](https://components.espressif.com/components/slint/slint/badge.svg)](https://components.espressif.com/components/slint/slint)
@@ -83,8 +84,13 @@ extern "C" void app_main(void)
     static std::vector<slint::platform::Rgb565Pixel> buffer(BSP_LCD_H_RES * BSP_LCD_V_RES);
 
     /* Initialize Slint's ESP platform support*/
-    slint_esp_init(slint::PhysicalSize({ BSP_LCD_H_RES, BSP_LCD_V_RES }), panel_handle,
-                                       touch_handle, buffer);
+    slint_esp_init(SlintPlatformConfiguration {
+            .size = slint::PhysicalSize({ BSP_LCD_H_RES, BSP_LCD_V_RES }),
+            .panel = panel_handle,
+            .touch = touch_handle,
+            .buffer1 = buffer,
+            .color_swap_16 = true });
+
     /* Instantiate the UI */
     auto ui = AppWindow::create();
     /* Show it on the screen and run the event loop */
@@ -167,16 +173,22 @@ using [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/ws
 One reason could be that you don't have enough ram for the heap or the stack.
 Make sure that the stack is big enough (~8KiB), and that all the RAM was made available for the heap allocator.
 
+### Wrong colors shown
+
+If colors look inverted on your display, it may be an incompatibility between how RGB565 colors are ordered in little-endian
+and your display expecting a different byte order. Typically, esp32 devices are little ending and display controllers often
+expect big-endian or `esp_lcd` configures them accordingly. Therefore, by default Slint converts pixels to big-endian.
+If your display controller expects little endian, set the `color_swap_16` field in `SlintPlatformConfiguration` to `false`.
+
 ## License
 
 You can use Slint under ***any*** of the following licenses, at your choice:
 
-1. [GNU GPLv3](https://github.com/slint-ui/slint/blob/master/LICENSES/GPL-3.0-only.txt),
-2. [Paid license](https://slint.dev/pricing.html).
+1. [Royalty-free license](https://github.com/slint-ui/slint/blob/master/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md),
+2. [GNU GPLv3](https://github.com/slint-ui/slint/blob/master/LICENSES/GPL-3.0-only.txt),
+3. [Paid license](https://github.com/slint-ui/slint/blob/master/LICENSES/LicenseRef-Slint-Software-3.0.md).
 
 See also the [Licensing FAQ](https://github.com/slint-ui/slint/blob/master/FAQ.md#licensing).
-
-Slint is also available with a third license (Royalty Free) for desktop applications.
 
 ## Links
 

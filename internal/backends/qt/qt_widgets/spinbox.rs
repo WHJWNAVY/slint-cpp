@@ -1,7 +1,10 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
-use i_slint_core::input::{FocusEventResult, KeyEventType};
+use i_slint_core::{
+    input::{FocusEventResult, KeyEventType},
+    platform::PointerEventButton,
+};
 
 use super::*;
 
@@ -23,6 +26,7 @@ pub struct NativeSpinBox {
     pub value: Property<i32>,
     pub minimum: Property<i32>,
     pub maximum: Property<i32>,
+    pub step_size: Property<i32>,
     pub cached_rendering_data: CachedRenderingData,
     pub edited: Callback<IntArg>,
     data: Property<NativeSpinBoxData>,
@@ -133,6 +137,7 @@ impl Item for NativeSpinBox {
         let mut data = self.data();
         let active_controls = data.active_controls;
         let pressed = data.pressed;
+        let step_size = self.step_size();
         let widget: NonNull<()> = SlintTypeErasedWidgetPtr::qwidget_ptr(&self.widget_ptr);
 
         let pos = event
@@ -167,42 +172,49 @@ impl Item for NativeSpinBox {
                     data.pressed = false;
                     true
                 }
-                MouseEvent::Released { .. } => {
+                MouseEvent::Released { button, .. } => {
                     data.pressed = false;
+                    let left_button = button == PointerEventButton::Left;
                     if new_control == cpp!(unsafe []->u32 as "int" { return QStyle::SC_SpinBoxUp;})
                         && enabled
+                        && left_button
                     {
                         let v = self.value();
                         if v < self.maximum() {
-                            self.value.set(v + 1);
-                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(v + 1,));
+                            let new_val = v + step_size;
+                            self.value.set(new_val);
+                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(new_val,));
                         }
                     }
                     if new_control
                         == cpp!(unsafe []->u32 as "int" { return QStyle::SC_SpinBoxDown;})
                         && enabled
+                        && left_button
                     {
                         let v = self.value();
                         if v > self.minimum() {
-                            self.value.set(v - 1);
-                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(v - 1,));
+                            let new_val = v - step_size;
+                            self.value.set(new_val);
+                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(new_val,));
                         }
                     }
                     true
                 }
                 MouseEvent::Moved { .. } => false,
                 MouseEvent::Wheel { delta_y, .. } => {
-                    if delta_y < 0. {
+                    if delta_y > 0. {
                         let v = self.value();
                         if v < self.maximum() {
-                            self.value.set(v + 1);
-                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(v + 1,));
+                            let new_val = v + step_size;
+                            self.value.set(new_val);
+                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(new_val,));
                         }
-                    } else if delta_y > 0. {
+                    } else if delta_y < 0. {
                         let v = self.value();
                         if v > self.minimum() {
-                            self.value.set(v - 1);
-                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(v - 1,));
+                            let new_val = v - step_size;
+                            self.value.set(new_val);
+                            Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(new_val,));
                         }
                     }
 
@@ -216,7 +228,7 @@ impl Item for NativeSpinBox {
 
         if let MouseEvent::Pressed { .. } = event {
             if !self.has_focus() {
-                WindowInner::from_pub(window_adapter.window()).set_focus_item(self_rc);
+                WindowInner::from_pub(window_adapter.window()).set_focus_item(self_rc, true);
             }
         }
         InputEventResult::EventAccepted
@@ -234,14 +246,14 @@ impl Item for NativeSpinBox {
         if event.text.starts_with(i_slint_core::input::key_codes::UpArrow)
             && self.value() < self.maximum()
         {
-            let new_val = self.value() + 1;
+            let new_val = self.value() + self.step_size();
             self.value.set(new_val);
             Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(new_val,));
             KeyEventResult::EventAccepted
         } else if event.text.starts_with(i_slint_core::input::key_codes::DownArrow)
             && self.value() > self.minimum()
         {
-            let new_val = self.value() - 1;
+            let new_val = self.value() - self.step_size();
             self.value.set(new_val);
             Self::FIELD_OFFSETS.edited.apply_pin(self).call(&(new_val,));
             KeyEventResult::EventAccepted

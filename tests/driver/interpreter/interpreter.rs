@@ -1,12 +1,12 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use itertools::Itertools;
 use slint_interpreter::{DiagnosticLevel, Value, ValueType};
 use std::{collections::HashMap, error::Error};
 
 pub fn test(testcase: &test_driver_lib::TestCase) -> Result<(), Box<dyn Error>> {
-    i_slint_backend_testing::init();
+    i_slint_backend_testing::init_no_event_loop();
 
     let source = std::fs::read_to_string(&testcase.absolute_path)?;
     let include_paths = test_driver_lib::extract_include_paths(&source)
@@ -18,7 +18,7 @@ pub fn test(testcase: &test_driver_lib::TestCase) -> Result<(), Box<dyn Error>> 
     let mut compiler = slint_interpreter::ComponentCompiler::default();
     compiler.set_include_paths(include_paths);
     compiler.set_library_paths(library_paths);
-    compiler.set_style(String::from("fluent")); // force to fluent style as Qt does not like multi-threaded test execution
+    compiler.set_style(testcase.requested_style.unwrap_or("fluent").into());
 
     let component =
         spin_on::spin_on(compiler.build_from_source(source, testcase.absolute_path.clone()));

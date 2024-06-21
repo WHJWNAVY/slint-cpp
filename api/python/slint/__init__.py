@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 from importlib.machinery import ModuleSpec
 import os
@@ -74,6 +74,22 @@ def _build_global_class(compdef, global_name):
 
         properties_and_callbacks[python_prop] = mk_setter_getter(callback_name)
 
+    for function_name in compdef.global_functions(global_name):
+        python_prop = _normalize_prop(function_name)
+        if python_prop in properties_and_callbacks:
+            logging.warning(f"Duplicated function {prop_name}")
+            continue
+
+        def mk_getter(function_name):
+            def getter(self):
+                def call(*args):
+                    return self.__instance__.invoke_global(global_name, function_name, *args)
+                return call
+
+            return property(getter)
+
+        properties_and_callbacks[python_prop] = mk_getter(function_name)
+
     return type("SlintGlobalClassWrapper", (), properties_and_callbacks)
 
 
@@ -143,6 +159,22 @@ def _build_class(compdef):
 
         properties_and_callbacks[python_prop] = mk_setter_getter(callback_name)
 
+    for function_name in compdef.functions:
+        python_prop = _normalize_prop(function_name)
+        if python_prop in properties_and_callbacks:
+            logging.warning(f"Duplicated function {prop_name}")
+            continue
+
+        def mk_getter(function_name):
+            def getter(self):
+                def call(*args):
+                    return self.__instance__.invoke(function_name, *args)
+                return call
+
+            return property(getter)
+
+        properties_and_callbacks[python_prop] = mk_getter(function_name)
+
     for global_name in compdef.globals:
         global_class = _build_global_class(compdef, global_name)
 
@@ -189,30 +221,31 @@ def load_file(path, quiet=False, style=None, include_paths=None, library_paths=N
     return module
 
 
-class SlintModuleLoader:
-    def create_module(self, spec):
+class SlintAutoLoader:
+    def __init__(self, base_dir=None):
+        if base_dir:
+            self.local_dirs = [base_dir]
+        else:
+            self.local_dirs = None
+
+    def __getattr__(self, name):
+        for path in self.local_dirs or sys.path:
+            dir_candidate = os.path.join(path, name)
+            if os.path.isdir(dir_candidate):
+                loader = SlintAutoLoader(dir_candidate)
+                setattr(self, name, loader)
+                return loader
+
+            file_candidate = dir_candidate + ".slint"
+            if os.path.isfile(file_candidate):
+                type_namespace = load_file(file_candidate)
+                setattr(self, name, type_namespace)
+                return type_namespace
+
         return None
 
-    def exec_module(self, module):
-        m = load_file(module.__name__)
-        module.__dict__.update(m.__dict__)
 
-
-class SlintModuleFinder:
-    def find_spec(self, name, path, target=None):
-        if "." in name:
-            return None
-
-        if not name.endswith("_slint"):
-            return None
-
-        candidate_filename = name.removesuffix("_slint") + ".slint"
-
-        for path in sys.path:
-            candidate = os.path.join(path, candidate_filename)
-            if os.path.exists(candidate):
-                return ModuleSpec(os.path.realpath(candidate), SlintModuleLoader())
-        return None
+loader = SlintAutoLoader()
 
 
 def _callback_decorator(callable, info):
@@ -234,8 +267,6 @@ def callback(global_name=None, name=None):
             info["global_name"] = global_name
         return lambda callback: _callback_decorator(callback, info)
 
-
-sys.meta_path.append(SlintModuleFinder())
 
 Image = native.PyImage
 Color = native.PyColor

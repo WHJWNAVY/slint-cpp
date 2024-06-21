@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 /*!
 This module contains the builtin text related items.
@@ -9,7 +9,7 @@ Lookup the [`crate::items`] module documentation.
 */
 use super::{
     InputType, Item, ItemConsts, ItemRc, KeyEventResult, KeyEventType, PointArg,
-    PointerEventButton, RenderingResult, TextHorizontalAlignment, TextOverflow,
+    PointerEventButton, RenderingResult, TextHorizontalAlignment, TextOverflow, TextStrokeStyle,
     TextVerticalAlignment, TextWrap, VoidArg,
 };
 use crate::graphics::{Brush, Color, FontRequest};
@@ -51,6 +51,9 @@ pub struct Text {
     pub wrap: Property<TextWrap>,
     pub overflow: Property<TextOverflow>,
     pub letter_spacing: Property<LogicalLength>,
+    pub stroke: Property<Brush>,
+    pub stroke_width: Property<LogicalLength>,
+    pub stroke_style: Property<TextStrokeStyle>,
     pub width: Property<LogicalLength>,
     pub height: Property<LogicalLength>,
     pub cached_rendering_data: CachedRenderingData,
@@ -65,12 +68,13 @@ impl Item for Text {
         window_adapter: &Rc<dyn WindowAdapter>,
     ) -> LayoutInfo {
         let window_inner = WindowInner::from_pub(window_adapter.window());
-        let implicit_size = |max_width| {
+        let implicit_size = |max_width, text_wrap| {
             window_adapter.renderer().text_size(
                 self.font_request(window_inner),
                 self.text().as_str(),
                 max_width,
                 ScaleFactor::new(window_adapter.window().scale_factor()),
+                text_wrap,
             )
         };
 
@@ -79,7 +83,7 @@ impl Item for Text {
         // letters will be cut off, apply the ceiling here.
         match orientation {
             Orientation::Horizontal => {
-                let implicit_size = implicit_size(None);
+                let implicit_size = implicit_size(None, TextWrap::NoWrap);
                 let min = match self.overflow() {
                     TextOverflow::Elide => implicit_size.width.min(
                         window_adapter
@@ -89,12 +93,13 @@ impl Item for Text {
                                 "…",
                                 None,
                                 ScaleFactor::new(window_inner.scale_factor()),
+                                TextWrap::NoWrap,
                             )
                             .width,
                     ),
                     TextOverflow::Clip => match self.wrap() {
                         TextWrap::NoWrap => implicit_size.width,
-                        TextWrap::WordWrap => 0 as Coord,
+                        TextWrap::WordWrap | TextWrap::CharWrap => 0 as Coord,
                     },
                 };
                 LayoutInfo {
@@ -105,8 +110,13 @@ impl Item for Text {
             }
             Orientation::Vertical => {
                 let h = match self.wrap() {
-                    TextWrap::NoWrap => implicit_size(None).height,
-                    TextWrap::WordWrap => implicit_size(Some(self.width())).height,
+                    TextWrap::NoWrap => implicit_size(None, TextWrap::NoWrap).height,
+                    TextWrap::WordWrap => {
+                        implicit_size(Some(self.width()), TextWrap::WordWrap).height
+                    }
+                    TextWrap::CharWrap => {
+                        implicit_size(Some(self.width()), TextWrap::CharWrap).height
+                    }
                 }
                 .ceil();
                 LayoutInfo { min: h, preferred: h, ..LayoutInfo::default() }
@@ -294,7 +304,7 @@ impl Item for TextInput {
         window_adapter: &Rc<dyn WindowAdapter>,
     ) -> LayoutInfo {
         let text = self.text();
-        let implicit_size = |max_width| {
+        let implicit_size = |max_width, text_wrap| {
             window_adapter.renderer().text_size(
                 self.font_request(window_adapter),
                 {
@@ -306,6 +316,7 @@ impl Item for TextInput {
                 },
                 max_width,
                 ScaleFactor::new(window_adapter.window().scale_factor()),
+                text_wrap,
             )
         };
 
@@ -314,10 +325,10 @@ impl Item for TextInput {
         // letters will be cut off, apply the ceiling here.
         match orientation {
             Orientation::Horizontal => {
-                let implicit_size = implicit_size(None);
+                let implicit_size = implicit_size(None, TextWrap::NoWrap);
                 let min = match self.wrap() {
                     TextWrap::NoWrap => implicit_size.width,
-                    TextWrap::WordWrap => 0 as Coord,
+                    TextWrap::WordWrap | TextWrap::CharWrap => 0 as Coord,
                 };
                 LayoutInfo {
                     min: min.ceil(),
@@ -327,8 +338,13 @@ impl Item for TextInput {
             }
             Orientation::Vertical => {
                 let h = match self.wrap() {
-                    TextWrap::NoWrap => implicit_size(None).height,
-                    TextWrap::WordWrap => implicit_size(Some(self.width())).height,
+                    TextWrap::NoWrap => implicit_size(None, TextWrap::NoWrap).height,
+                    TextWrap::WordWrap => {
+                        implicit_size(Some(self.width()), TextWrap::WordWrap).height
+                    }
+                    TextWrap::CharWrap => {
+                        implicit_size(Some(self.width()), TextWrap::CharWrap).height
+                    }
                 }
                 .ceil();
                 LayoutInfo { min: h, preferred: h, ..LayoutInfo::default() }
@@ -914,6 +930,7 @@ impl TextInput {
                 " ",
                 None,
                 ScaleFactor::new(window_adapter.window().scale_factor()),
+                TextWrap::NoWrap,
             )
             .height;
 
@@ -1262,7 +1279,7 @@ impl TextInput {
         self.as_ref().anchor_position_byte_offset.set(self.as_ref().cursor_position_byte_offset());
     }
 
-    fn select_word(self: Pin<&Self>, window_adapter: &Rc<dyn WindowAdapter>, self_rc: &ItemRc) {
+    pub fn select_word(self: Pin<&Self>, window_adapter: &Rc<dyn WindowAdapter>, self_rc: &ItemRc) {
         let text = self.text();
         let anchor = self.anchor_position(&text);
         let cursor = self.cursor_position(&text);
@@ -1476,7 +1493,7 @@ impl TextInput {
         self_rc: &ItemRc,
     ) {
         if !self.has_focus() {
-            WindowInner::from_pub(window_adapter.window()).set_focus_item(self_rc);
+            WindowInner::from_pub(window_adapter.window()).set_focus_item(self_rc, true);
         } else if !self.read_only() {
             if let Some(w) = window_adapter.internal(crate::InternalToken) {
                 w.input_method_request(InputMethodRequest::Enable(

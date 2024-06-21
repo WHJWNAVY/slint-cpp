@@ -1,26 +1,28 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Passes that fills the Property::use_count
 //!
 //! This pass assume that use_count of all properties is zero
 
 use crate::llr::{
-    Animation, BindingExpression, EvaluationContext, Expression, ParentCtx, PropertyReference,
-    PublicComponent,
+    Animation, BindingExpression, CompilationUnit, EvaluationContext, Expression, ParentCtx,
+    PropertyReference,
 };
 
-pub fn count_property_use(root: &PublicComponent) {
+pub fn count_property_use(root: &CompilationUnit) {
     // Visit the root properties that are used.
     // 1. the public properties
-    let root_ctx = EvaluationContext::new_sub_component(root, &root.item_tree.root, (), None);
-    for p in root.public_properties.iter().filter(|p| {
-        !matches!(
-            p.prop,
-            PropertyReference::Function { .. } | PropertyReference::GlobalFunction { .. }
-        )
-    }) {
-        visit_property(&p.prop, &root_ctx);
+    for c in &root.public_components {
+        let root_ctx = EvaluationContext::new_sub_component(root, &c.item_tree.root, (), None);
+        for p in c.public_properties.iter().filter(|p| {
+            !matches!(
+                p.prop,
+                PropertyReference::Function { .. } | PropertyReference::GlobalFunction { .. }
+            )
+        }) {
+            visit_property(&p.prop, &root_ctx);
+        }
     }
     for g in root.globals.iter().filter(|g| g.exported) {
         let ctx = EvaluationContext::new_global(root, g, ());
@@ -109,6 +111,12 @@ pub fn count_property_use(root: &PublicComponent) {
         // 8.functions (TODO: only visit used function)
         for f in &sc.functions {
             f.code.visit_recursive(&mut |e| visit_expression(e, ctx));
+        }
+
+        // 9. change callbacks
+        for (p, e) in &sc.change_callbacks {
+            visit_property(p, ctx);
+            e.visit_recursive(&mut |e| visit_expression(e, ctx));
         }
     });
 

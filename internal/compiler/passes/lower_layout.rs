@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Passe that compute the layout constraint
 
@@ -18,9 +18,10 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-pub async fn lower_layouts(
+pub fn lower_layouts(
     component: &Rc<Component>,
     type_loader: &mut TypeLoader,
+    style_metrics: &Rc<Component>,
     diag: &mut BuildDiagnostics,
 ) {
     // lower the preferred-{width, height}: 100%;
@@ -40,12 +41,6 @@ pub async fn lower_layouts(
         }
     });
 
-    // Ignore import errors
-    let mut build_diags_to_ignore = crate::diagnostics::BuildDiagnostics::default();
-    let style_metrics = type_loader
-        .import_component("std-widgets.slint", "StyleMetrics", &mut build_diags_to_ignore)
-        .await;
-
     *component.root_constraints.borrow_mut() =
         LayoutConstraints::new(&component.root_element, diag);
 
@@ -55,7 +50,7 @@ pub async fn lower_layouts(
             &component,
             elem,
             &type_loader.global_type_registry.borrow(),
-            &style_metrics,
+            style_metrics,
             diag,
         );
         check_no_layout_properties(elem, diag);
@@ -89,7 +84,7 @@ fn lower_element_layout(
     component: &Rc<Component>,
     elem: &ElementRc,
     type_register: &TypeRegister,
-    style_metrics: &Option<Rc<Component>>,
+    style_metrics: &Rc<Component>,
     diag: &mut BuildDiagnostics,
 ) {
     let base_type = if let ElementType::Builtin(base_type) = &elem.borrow().base_type {
@@ -112,7 +107,7 @@ fn lower_element_layout(
             );
             return;
         }
-        "GridLayout" => lower_grid_layout(component, elem, diag),
+        "GridLayout" => lower_grid_layout(component, elem, diag, type_register),
         "HorizontalLayout" => lower_box_layout(elem, diag, Orientation::Horizontal),
         "VerticalLayout" => lower_box_layout(elem, diag, Orientation::Vertical),
         "Dialog" => {
@@ -146,6 +141,7 @@ fn lower_grid_layout(
     component: &Rc<Component>,
     grid_layout_element: &ElementRc,
     diag: &mut BuildDiagnostics,
+    type_register: &TypeRegister,
 ) {
     let mut grid = GridLayout {
         elems: Default::default(),
@@ -194,7 +190,13 @@ fn lower_grid_layout(
                 row += 1;
                 col = 0;
             }
-            component.optimized_elements.borrow_mut().push(layout_child);
+            if layout_child.borrow().has_popup_child {
+                // We need to keep that element otherwise the popup will malfunction
+                layout_child.borrow_mut().base_type = type_register.empty_type();
+                collected_children.push(layout_child);
+            } else {
+                component.optimized_elements.borrow_mut().push(layout_child);
+            }
         } else {
             grid.add_element(
                 &layout_child,
@@ -247,7 +249,7 @@ fn lower_grid_layout(
     grid_layout_element.borrow_mut().layout_info_prop =
         Some((layout_info_prop_h, layout_info_prop_v));
     for d in grid_layout_element.borrow_mut().debug.iter_mut() {
-        d.1 = Some(Layout::GridLayout(grid.clone()));
+        d.layout = Some(Layout::GridLayout(grid.clone()));
     }
 }
 
@@ -437,13 +439,13 @@ fn lower_box_layout(
     );
     layout_element.borrow_mut().layout_info_prop = Some((layout_info_prop_h, layout_info_prop_v));
     for d in layout_element.borrow_mut().debug.iter_mut() {
-        d.1 = Some(Layout::BoxLayout(layout.clone()));
+        d.layout = Some(Layout::BoxLayout(layout.clone()));
     }
 }
 
 fn lower_dialog_layout(
     dialog_element: &ElementRc,
-    style_metrics: &Option<Rc<Component>>,
+    style_metrics: &Rc<Component>,
     diag: &mut BuildDiagnostics,
 ) {
     let mut grid = GridLayout {
@@ -451,20 +453,13 @@ fn lower_dialog_layout(
         geometry: LayoutGeometry::new(dialog_element),
         dialog_button_roles: None,
     };
-    if let Some(metrics) = style_metrics.as_ref().map(|comp| &comp.root_element) {
-        grid.geometry.padding.bottom.get_or_insert(NamedReference::new(metrics, "layout-padding"));
-        grid.geometry.padding.top.get_or_insert(NamedReference::new(metrics, "layout-padding"));
-        grid.geometry.padding.left.get_or_insert(NamedReference::new(metrics, "layout-padding"));
-        grid.geometry.padding.right.get_or_insert(NamedReference::new(metrics, "layout-padding"));
-        grid.geometry
-            .spacing
-            .horizontal
-            .get_or_insert(NamedReference::new(metrics, "layout-spacing"));
-        grid.geometry
-            .spacing
-            .vertical
-            .get_or_insert(NamedReference::new(metrics, "layout-spacing"));
-    }
+    let metrics = &style_metrics.root_element;
+    grid.geometry.padding.bottom.get_or_insert(NamedReference::new(metrics, "layout-padding"));
+    grid.geometry.padding.top.get_or_insert(NamedReference::new(metrics, "layout-padding"));
+    grid.geometry.padding.left.get_or_insert(NamedReference::new(metrics, "layout-padding"));
+    grid.geometry.padding.right.get_or_insert(NamedReference::new(metrics, "layout-padding"));
+    grid.geometry.spacing.horizontal.get_or_insert(NamedReference::new(metrics, "layout-spacing"));
+    grid.geometry.spacing.vertical.get_or_insert(NamedReference::new(metrics, "layout-spacing"));
 
     let layout_cache_prop_h = create_new_prop(dialog_element, "layout-cache-h", Type::LayoutCache);
     let layout_cache_prop_v = create_new_prop(dialog_element, "layout-cache-v", Type::LayoutCache);
@@ -650,7 +645,7 @@ fn lower_dialog_layout(
     );
     dialog_element.borrow_mut().layout_info_prop = Some((layout_info_prop_h, layout_info_prop_v));
     for d in dialog_element.borrow_mut().debug.iter_mut() {
-        d.1 = Some(Layout::GridLayout(grid.clone()));
+        d.layout = Some(Layout::GridLayout(grid.clone()));
     }
 }
 
