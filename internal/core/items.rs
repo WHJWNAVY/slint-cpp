@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore nesw
 
@@ -775,7 +775,7 @@ impl Item for FocusScope {
         self_rc: &ItemRc,
     ) -> InputEventResult {
         if self.enabled() && matches!(event, MouseEvent::Pressed { .. }) && !self.has_focus() {
-            WindowInner::from_pub(window_adapter.window()).set_focus_item(self_rc);
+            WindowInner::from_pub(window_adapter.window()).set_focus_item(self_rc, true);
             InputEventResult::EventAccepted
         } else {
             InputEventResult::EventIgnored
@@ -1254,6 +1254,7 @@ pub struct WindowItem {
     pub background: Property<Brush>,
     pub title: Property<SharedString>,
     pub no_frame: Property<bool>,
+    pub resize_border: Property<LogicalLength>,
     pub always_on_top: Property<bool>,
     pub icon: Property<crate::graphics::Image>,
     pub default_font_family: Property<SharedString>,
@@ -1466,7 +1467,7 @@ declare_item_vtable! {
 macro_rules! declare_enums {
     ($( $(#[$enum_doc:meta])* enum $Name:ident { $( $(#[$value_doc:meta])* $Value:ident,)* })*) => {
         $(
-            #[derive(Copy, Clone, Debug, PartialEq, Eq, strum::EnumString, strum::Display, Hash)]
+            #[derive(Copy, Clone, Debug, PartialEq, Eq, strum::EnumString, strum::Display, strum::EnumIter, Hash)]
             #[repr(u32)]
             #[strum(serialize_all = "kebab-case")]
             $(#[$enum_doc])*

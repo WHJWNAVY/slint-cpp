@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -14,10 +14,6 @@ fn main() -> std::io::Result<()> {
         let mut module_name = testcase.identifier();
         if module_name.starts_with(|c: char| !c.is_ascii_alphabetic()) {
             module_name.insert(0, '_');
-        }
-        if let Some(style) = testcase.requested_style {
-            module_name.push('_');
-            module_name.push_str(style);
         }
         writeln!(generated_file, "#[path=\"{0}.rs\"] mod r#{0};", module_name)?;
         let source = std::fs::read_to_string(&testcase.absolute_path)?;
@@ -43,7 +39,7 @@ fn main() -> std::io::Result<()> {
                 r"
 #[test] {} fn t_{}() -> std::result::Result<(), std::boxed::Box<dyn std::error::Error>> {{
     use i_slint_backend_testing as slint_testing;
-    slint_testing::init();
+    slint_testing::init_no_event_loop();
     {}
     Ok(())
 }}",
@@ -61,6 +57,7 @@ fn main() -> std::io::Result<()> {
     //Make sure to use a consistent style
     println!("cargo:rustc-env=SLINT_STYLE=fluent");
     println!("cargo:rustc-env=SLINT_ENABLE_EXPERIMENTAL_FEATURES=1");
+    println!("cargo:rustc-env=SLINT_EMIT_DEBUG_INFO=1");
     Ok(())
 }
 
@@ -140,11 +137,12 @@ fn generate_source(
     let syntax_node =
         parser::parse(source.to_owned(), Some(&testcase.absolute_path), None, &mut diag);
     let mut compiler_config = CompilerConfiguration::new(generator::OutputFormat::Rust);
-    compiler_config.enable_component_containers = true;
+    compiler_config.enable_experimental = true;
     compiler_config.include_paths = include_paths;
     compiler_config.library_paths = library_paths;
     compiler_config.style = Some(testcase.requested_style.unwrap_or("fluent").to_string());
-    let (root_component, diag, _) =
+    compiler_config.debug_info = true;
+    let (root_component, diag, loader) =
         spin_on::spin_on(compile_syntax_node(syntax_node, diag, compiler_config));
 
     if diag.has_error() {
@@ -157,6 +155,11 @@ fn generate_source(
         diag.print();
     }
 
-    generator::generate(generator::OutputFormat::Rust, output, &root_component)?;
+    generator::generate(
+        generator::OutputFormat::Rust,
+        output,
+        &root_component,
+        &loader.compiler_config,
+    )?;
     Ok(())
 }

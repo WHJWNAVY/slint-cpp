@@ -1,4 +1,4 @@
-<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial -->
+<!-- Copyright © SixtyFPS GmbH <info@slint.dev> ; SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0 -->
 
 # Slint-node (Beta)
 
@@ -7,7 +7,7 @@
 [Slint](https://slint.dev/) is a UI toolkit that supports different programming languages.
 Slint-node is the integration with Node.js.
 
-To get started you use the [walk-through tutorial](https://slint.dev/docs/tutorial/node).
+To get started you use the [walk-through tutorial](https://slint.dev/docs/quickstart/node).
 We also have a [Getting Started Template](https://github.com/slint-ui/slint-nodejs-template) repository with
 the code of a minimal application using Slint that can be used as a starting point to your program.
 
@@ -33,7 +33,7 @@ You need to install the following components:
 
   * **[Node.js](https://nodejs.org/download/release/)** (v16. or newer)
   * **[npm](https://www.npmjs.com/)**
-  * **[Rust compiler](https://www.rust-lang.org/tools/install)** (1.70 or newer)
+  * **[Rust compiler](https://www.rust-lang.org/tools/install)** (1.73 or newer)
 
 You will also need a few more dependencies, see <https://github.com/slint-ui/slint/blob/master/docs/building.md#prerequisites>
 

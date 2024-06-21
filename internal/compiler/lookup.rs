@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Helper to do lookup in expressions
 
@@ -496,7 +496,18 @@ impl LookupType {
                 {
                     None
                 } else {
-                    Some(Expression::ElementReference(Rc::downgrade(&c.root_element)).into())
+                    Some(LookupResult::Expression {
+                        expression: Expression::ElementReference(Rc::downgrade(&c.root_element)),
+                        deprecated: (name == "StyleMetrics"
+                            && !ctx.type_register.expose_internal_types
+                            && c.root_element
+                                .borrow()
+                                .debug
+                                .get(0)
+                                .and_then(|x| x.node.source_file())
+                                .map_or(false, |x| x.path().starts_with("builtin:")))
+                        .then(|| "Palette".to_string()),
+                    })
                 }
             }
             _ => None,
@@ -781,7 +792,7 @@ impl LookupObject for MathFunctions {
             .or_else(|| f("ceil", BuiltinFunctionReference(BuiltinFunction::Ceil, sl())))
             .or_else(|| f("floor", BuiltinFunctionReference(BuiltinFunction::Floor, sl())))
             .or_else(|| f("clamp", BuiltinMacroReference(BuiltinMacroFunction::Clamp, t.clone())))
-            .or_else(|| f("abs", BuiltinFunctionReference(BuiltinFunction::Abs, sl())))
+            .or_else(|| f("abs", BuiltinMacroReference(BuiltinMacroFunction::Abs, t.clone())))
             .or_else(|| f("sqrt", BuiltinFunctionReference(BuiltinFunction::Sqrt, sl())))
             .or_else(|| f("max", BuiltinMacroReference(BuiltinMacroFunction::Max, t.clone())))
             .or_else(|| f("min", BuiltinMacroReference(BuiltinMacroFunction::Min, t.clone())))
@@ -803,19 +814,36 @@ impl LookupObject for SlintInternal {
         ctx: &LookupCtx,
         f: &mut impl FnMut(&str, LookupResult) -> Option<R>,
     ) -> Option<R> {
-        f(
-            "dark-color-scheme",
-            Expression::FunctionCall {
-                function: Expression::BuiltinFunctionReference(
-                    BuiltinFunction::DarkColorScheme,
-                    None,
-                )
+        use Expression::BuiltinFunctionReference as BFR;
+        let sl = || ctx.current_token.as_ref().map(|t| t.to_source_location());
+        None.or_else(|| {
+            f(
+                "color-scheme",
+                Expression::FunctionCall {
+                    function: BFR(BuiltinFunction::ColorScheme, None).into(),
+                    arguments: vec![],
+                    source_location: sl(),
+                }
                 .into(),
-                arguments: vec![],
-                source_location: ctx.current_token.as_ref().map(|t| t.to_source_location()),
-            }
-            .into(),
-        )
+            )
+        })
+        .or_else(|| {
+            f(
+                "use-24-hour-format",
+                Expression::FunctionCall {
+                    function: BFR(BuiltinFunction::Use24HourFormat, None).into(),
+                    arguments: vec![],
+                    source_location: sl(),
+                }
+                .into(),
+            )
+        })
+        .or_else(|| f("month-day-count", BFR(BuiltinFunction::MonthDayCount, sl()).into()))
+        .or_else(|| f("month-offset", BFR(BuiltinFunction::MonthOffset, sl()).into()))
+        .or_else(|| f("format-date", BFR(BuiltinFunction::FormatDate, sl()).into()))
+        .or_else(|| f("date-now", BFR(BuiltinFunction::DateNow, sl()).into()))
+        .or_else(|| f("valid-date", BFR(BuiltinFunction::ValidDate, sl()).into()))
+        .or_else(|| f("parse-date", BFR(BuiltinFunction::ParseDate, sl()).into()))
     }
 }
 
@@ -831,6 +859,7 @@ impl LookupObject for ColorFunctions {
         let mut f = |n, e: Expression| f(n, e.into());
         None.or_else(|| f("rgb", BuiltinMacroReference(BuiltinMacroFunction::Rgb, t.clone())))
             .or_else(|| f("rgba", BuiltinMacroReference(BuiltinMacroFunction::Rgb, t.clone())))
+            .or_else(|| f("hsv", BuiltinMacroReference(BuiltinMacroFunction::Hsv, t.clone())))
     }
 }
 
@@ -987,8 +1016,13 @@ impl<'a> LookupObject for ColorExpression<'a> {
         f: &mut impl FnMut(&str, LookupResult) -> Option<R>,
     ) -> Option<R> {
         let member_function = |f: BuiltinFunction| {
+            let base = if f == BuiltinFunction::ColorHsvaStruct && self.0.ty() == Type::Brush {
+                Expression::Cast { from: Box::new(self.0.clone()), to: Type::Color }
+            } else {
+                self.0.clone()
+            };
             LookupResult::from(Expression::MemberFunction {
-                base: Box::new(self.0.clone()),
+                base: Box::new(base),
                 base_node: ctx.current_token.clone(), // Note that this is not the base_node, but the function's node
                 member: Box::new(Expression::BuiltinFunctionReference(
                     f,
@@ -1018,6 +1052,7 @@ impl<'a> LookupObject for ColorExpression<'a> {
             .or_else(|| f("green", field_access("green")))
             .or_else(|| f("blue", field_access("blue")))
             .or_else(|| f("alpha", field_access("alpha")))
+            .or_else(|| f("to-hsv", member_function(BuiltinFunction::ColorHsvaStruct)))
             .or_else(|| f("brighter", member_function(BuiltinFunction::ColorBrighter)))
             .or_else(|| f("darker", member_function(BuiltinFunction::ColorDarker)))
             .or_else(|| f("transparentize", member_function(BuiltinFunction::ColorTransparentize)))

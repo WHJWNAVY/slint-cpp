@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use std::rc::Rc;
 
@@ -51,17 +51,16 @@ impl SkiaRendererAdapter {
         device_opener: &crate::DeviceOpener,
     ) -> Result<Box<dyn crate::fullscreenwindowadapter::FullscreenRenderer>, PlatformError> {
         let drm_output = DrmOutput::new(device_opener)?;
-        let display = crate::display::gbmdisplay::GbmDisplay::new(drm_output)?;
+        let display = Rc::new(crate::display::gbmdisplay::GbmDisplay::new(drm_output)?);
 
         use i_slint_renderer_skia::Surface;
-        use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
         let (width, height) = display.drm_output.size();
         let size = i_slint_core::api::PhysicalSize::new(width, height);
 
         let skia_gl_surface = i_slint_renderer_skia::opengl_surface::OpenGLSurface::new(
-            display.window_handle().unwrap(),
-            display.display_handle().unwrap(),
+            display.clone(),
+            display.clone(),
             size,
         )?;
 
@@ -69,7 +68,7 @@ impl SkiaRendererAdapter {
             renderer: i_slint_renderer_skia::SkiaRenderer::new_with_surface(Box::new(
                 skia_gl_surface,
             )),
-            presenter: Rc::new(display),
+            presenter: display,
             size,
         });
 
@@ -186,7 +185,7 @@ impl i_slint_renderer_skia::software_surface::RenderBuffer for DrmDumbBufferAcce
             return Ok(());
         };
 
-        self.display.map_back_buffer(&mut |mut pixels| {
+        self.display.map_back_buffer(&mut |mut pixels, _age| {
             render_callback(width, height, skia_safe::ColorType::BGRA8888, pixels.as_mut())
         })
     }

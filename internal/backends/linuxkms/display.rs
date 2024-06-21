@@ -1,9 +1,10 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use i_slint_core::api::PhysicalSize;
 use i_slint_core::platform::PlatformError;
 
+#[allow(unused)]
 pub trait Presenter {
     fn is_ready_to_present(&self) -> bool;
     fn register_page_flip_handler(
@@ -19,7 +20,11 @@ pub trait Presenter {
 
 #[cfg(any(feature = "renderer-skia-opengl", feature = "renderer-femtovg"))]
 pub mod gbmdisplay;
-#[cfg(any(feature = "renderer-skia-opengl", feature = "renderer-skia-vulkan"))]
+#[cfg(any(
+    feature = "renderer-skia-opengl",
+    feature = "renderer-skia-vulkan",
+    feature = "renderer-software"
+))]
 pub mod swdisplay;
 #[cfg(feature = "renderer-skia-vulkan")]
 pub mod vulkandisplay;

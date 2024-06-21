@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 cmake_minimum_required(VERSION 3.21)
 
@@ -39,7 +39,7 @@ if(SLINT_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 if(SLINT_BUILD_TESTING AND (SLINT_FEATURE_COMPILER OR SLINT_COMPILER))
-    add_subdirectory(docs/tutorial/cpp/src/)
+    add_subdirectory(docs/reference/src/quickstart/)
 endif()
 
 feature_summary(WHAT ENABLED_FEATURES DESCRIPTION "Enabled features:")

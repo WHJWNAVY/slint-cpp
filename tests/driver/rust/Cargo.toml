@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 [package]
 name = "test-driver-rust"
@@ -22,12 +22,12 @@ build-time = ["i-slint-compiler", "spin_on"]
 
 [dependencies]
 slint = { workspace = true, features = ["std", "compat-1-2"] }
-i-slint-backend-testing = { workspace = true, features = ["default"] }
+i-slint-backend-testing = { workspace = true, features = ["internal"] }
 slint-interpreter = { workspace = true, features = ["std", "compat-1-2", "internal"] }
-spin_on = "0.1"
+spin_on = { workspace = true }
 
 [build-dependencies]
 i-slint-compiler = { workspace = true, features = ["default", "rust", "display-diagnostics"], optional = true }
 
-spin_on = { version = "0.1", optional = true}
+spin_on = { workspace = true, optional = true }
 test_driver_lib = { path = "../driverlib" }

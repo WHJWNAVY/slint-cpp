@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! This module contains the code for the highlight of some elements
 
@@ -12,6 +12,20 @@ use std::path::Path;
 use std::rc::Rc;
 use vtable::VRc;
 
+fn normalize_repeated_element(element: ElementRc) -> ElementRc {
+    if element.borrow().repeated.is_some() {
+        if let i_slint_compiler::langtype::ElementType::Component(base) =
+            &element.borrow().base_type
+        {
+            if base.parent_element.upgrade().is_some() {
+                return base.root_element.clone();
+            }
+        }
+    }
+
+    element
+}
+
 fn collect_highlight_data(
     component: &DynamicComponentVRc,
     elements: &[std::rc::Weak<RefCell<Element>>],
@@ -22,6 +36,7 @@ fn collect_highlight_data(
     let c = component_instance.unerase(guard);
     let mut values = Vec::new();
     for element in elements.iter().filter_map(|e| e.upgrade()) {
+        let element = normalize_repeated_element(element);
         if let Some(repeater_path) = repeater_path(&element) {
             fill_highlight_data(&repeater_path, &element, &c, &c, &mut values);
         }
@@ -53,8 +68,10 @@ pub(crate) fn element_positions(
     let c = component_instance.unerase(guard);
 
     let mut values = Vec::new();
-    if let Some(repeater_path) = repeater_path(element) {
-        fill_highlight_data(&repeater_path, element, &c, &c, &mut values);
+
+    let element = normalize_repeated_element(element.clone());
+    if let Some(repeater_path) = repeater_path(&element) {
+        fill_highlight_data(&repeater_path, &element, &c, &c, &mut values);
     }
     values
 }
@@ -77,6 +94,11 @@ fn fill_highlight_data(
     root_component_instance: &ItemTreeBox,
     values: &mut Vec<i_slint_core::lengths::LogicalRect>,
 ) {
+    if element.borrow().repeated.is_some() {
+        // avoid a panic
+        return;
+    }
+
     if let [first, rest @ ..] = repeater_path {
         generativity::make_guard!(guard);
         let rep = crate::dynamic_item_tree::get_repeater_by_name(
@@ -132,7 +154,7 @@ fn find_element_node_at_source_code_position(
                 .debug
                 .iter()
                 .enumerate()
-                .filter_map(|(i, n)| n.0.QualifiedName().map(|n| (i, n)))
+                .filter_map(|(i, n)| n.node.QualifiedName().map(|n| (i, n)))
             {
                 if node.source_file.path() == path && node.text_range().contains(offset.into()) {
                     result.push((elem.clone(), index));

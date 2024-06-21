@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! module for the SharedString and related things
 
@@ -10,8 +10,6 @@ use crate::SharedVector;
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 use core::fmt::{Debug, Display, Write};
-#[cfg(not(feature = "std"))]
-use core::iter::FromIterator;
 use core::ops::Deref;
 
 /// This macro is the same as [`std::format!`], but it returns a [`SharedString`] instead.

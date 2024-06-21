@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! This module contains all enums exposed in the .slint language.
 
@@ -46,6 +46,8 @@ macro_rules! for_each_enums {
                 NoWrap,
                 /// The text will be wrapped at word boundaries.
                 WordWrap,
+                /// The text will be wrapped at any character. Currently only supported by the Qt and Software renderers.
+                CharWrap,
             }
 
             /// This enum describes the how the text appear if it is too wide to fit in the [`Text`](elements.md#text) width.
@@ -54,6 +56,14 @@ macro_rules! for_each_enums {
                 Clip,
                 /// The text will be elided with `…`.
                 Elide,
+            }
+
+            /// This enum describes the positioning of a text stroke relative to the border of the glyphs in a [`Text`](elements.md#text).
+            enum TextStrokeStyle {
+                /// The inside edge of the stroke is at the outer edge of the text.
+                Outside,
+                /// The center line of the stroke is at the outer edge of the text, like in Adobe Illustrator.
+                Center,
             }
 
             /// This enum describes whether an event was rejected or accepted by an event handler.
@@ -326,36 +336,39 @@ macro_rules! for_each_enums {
 
             /// This enum represents the different values for the `accessible-role` property, used to describe the
             /// role of an element in the context of assistive technology such as screen readers.
+            #[non_exhaustive]
             enum AccessibleRole {
                 /// The element isn't accessible.
                 None,
-                /// The element is a [`Button`](../widgets/button.md) or behaves like one.
+                /// The element is a [`Button`](slint-reference:src/language/widgets/button) or behaves like one.
                 Button,
-                /// The element is a [`CheckBox`](../widgets/checkbox.md) or behaves like one.
+                /// The element is a [`CheckBox`](slint-reference:src/language/widgets/checkbox) or behaves like one.
                 Checkbox,
-                /// The element is a [`ComboBox`](../widgets/combobox.md) or behaves like one.
+                /// The element is a [`ComboBox`](slint-reference:src/language/widgets/combobox) or behaves like one.
                 Combobox,
-                /// The element is a [`ListView`](../widgets/listview.md) or behaves like one.
+                /// The element is a [`ListView`](slint-reference:src/language/widgets/listview) or behaves like one.
                 List,
-                /// The element is a [`Slider`](../widgets/slider.md) or behaves like one.
+                /// The element is a [`Slider`](slint-reference:src/language/widgets/slider) or behaves like one.
                 Slider,
-                /// The element is a [`SpinBox`](../widgets/spinbox.md) or behaves like one.
+                /// The element is a [`SpinBox`](slint-reference:src/language/widgets/spinbox) or behaves like one.
                 Spinbox,
-                /// The element is a [`Tab`](../widgets/tabwidget.md) or behaves like one.
+                /// The element is a [`Tab`](slint-reference:src/language/widgets/tabwidget) or behaves like one.
                 Tab,
-                /// The element is similar to the tab bar in a [`TabWidget`](../widgets/tabwidget.md).
+                /// The element is similar to the tab bar in a [`TabWidget`](slint-reference:src/language/widgets/tabwidget).
                 TabList,
-                /// The role for a [`Text`](elements.md#text) element. It's automatically applied.
+                /// The role for a [`Text`](slint-reference:src/language/builtins/elements#text) element. It's automatically applied.
                 Text,
-                /// The role for a [`TableView`](../widgets/standardtableview.md ) or behaves like one.
+                /// The role for a [`TableView`](slint-reference:src/language/widgets/standardtableview ) or behaves like one.
                 Table,
                 /// The role for a TreeView or behaves like one. (Not provided yet)
                 Tree,
-                /// The element is a [`ProgressIndicator`](../widgets/progressindicator.md) or behaves like one.
+                /// The element is a [`ProgressIndicator`](slint-reference:src/language/widgets/progressindicator) or behaves like one.
                 ProgressIndicator,
                 /// The role for widget with editable text such as a
-                /// [`LineEdit`](../widgets/lineedit.md) or a [`TextEdit`](../widgets/textedit.md)
+                /// [`LineEdit`](slint-reference:src/language/widgets/lineedit) or a [`TextEdit`](slint-reference:src/language/widgets/textedit)
                 TextInput,
+                /// The element is a [`Switch`](slint-reference:src/language/widgets/switch) or behaves like one.
+                Switch,
             }
 
             /// This enum represents the different values of the `sort-order` property.
@@ -377,6 +390,18 @@ macro_rules! for_each_enums {
                 Horizontal,
                 /// Element is oriented vertically.
                 Vertical,
+            }
+
+            /// This enum indicates the color scheme used by the widget style. Use this to explicitly switch
+            /// between dark and light schemes, or choose Unknown to fall back to the system default.
+            enum ColorScheme {
+                /// The scheme is not known and a system wide setting configures this. This could mean that
+                /// the widgets are shown in a dark or light scheme, but it could also be a custom color scheme.
+                Unknown,
+                /// The style chooses light colors for the background and dark for the foreground.
+                Dark,
+                /// The style chooses dark colors for the background and light for the foreground.
+                Light,
             }
         ];
     };

@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -8,6 +8,7 @@ use core::pin::Pin;
 
 use crate::api::PlatformError;
 use crate::item_tree::ItemTreeRef;
+use crate::items::TextWrap;
 use crate::lengths::{LogicalLength, LogicalPoint, LogicalRect, LogicalSize, ScaleFactor};
 use crate::window::WindowAdapter;
 
@@ -25,13 +26,15 @@ impl<T: RendererSealed> Renderer for T {}
 /// users to re-implement these functions.
 pub trait RendererSealed {
     /// Returns the size of the given text in logical pixels.
-    /// When set, `max_width` means that one need to wrap the text so it does not go further than that
+    /// When set, `max_width` means that one need to wrap the text, so it does not go further than that,
+    /// using the wrapping type passed by `text_wrap`.
     fn text_size(
         &self,
         font_request: crate::graphics::FontRequest,
         text: &str,
         max_width: Option<LogicalLength>,
         scale_factor: ScaleFactor,
+        text_wrap: TextWrap,
     ) -> LogicalSize;
 
     /// Returns the (UTF-8) byte offset in the text property that refers to the character that contributed to

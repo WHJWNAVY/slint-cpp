@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use std::fmt::{Display, Result, Write};
 
@@ -8,15 +8,15 @@ use itertools::Itertools;
 use crate::expression_tree::MinMaxOp;
 
 use super::{
-    EvaluationContext, Expression, ParentCtx, PropertyReference, PublicComponent, SubComponent,
+    CompilationUnit, EvaluationContext, Expression, ParentCtx, PropertyReference, SubComponent,
 };
 
-pub fn pretty_print(root: &PublicComponent, writer: &mut dyn Write) -> Result {
+pub fn pretty_print(root: &CompilationUnit, writer: &mut dyn Write) -> Result {
     PrettyPrinter { writer, indentation: 0 }.print_root(root)
 }
 
 pub fn pretty_print_component(
-    root: &PublicComponent,
+    root: &CompilationUnit,
     component: &SubComponent,
     writer: &mut dyn Write,
 ) -> Result {
@@ -29,16 +29,19 @@ struct PrettyPrinter<'a> {
 }
 
 impl<'a> PrettyPrinter<'a> {
-    fn print_root(&mut self, root: &PublicComponent) -> Result {
+    fn print_root(&mut self, root: &CompilationUnit) -> Result {
         for c in &root.sub_components {
             self.print_component(root, c, None)?
         }
-        self.print_component(root, &root.item_tree.root, None)
+        for p in &root.public_components {
+            self.print_component(root, &p.item_tree.root, None)?
+        }
+        Ok(())
     }
 
     fn print_component(
         &mut self,
-        root: &PublicComponent,
+        root: &CompilationUnit,
         sc: &SubComponent,
         parent: Option<ParentCtx<'_>>,
     ) -> Result {
@@ -137,7 +140,7 @@ impl<T> Display for DisplayPropertyRef<'_, T> {
                 write!(f, "{}", Self(parent_reference, ctx))
             }
             PropertyReference::Global { global_index, property_index } => {
-                let g = &ctx.public_component.globals[*global_index];
+                let g = &ctx.compilation_unit.globals[*global_index];
                 write!(f, "{}.{}", g.name, g.properties[*property_index].name)
             }
             PropertyReference::Function { sub_component_path, function_index } => {
@@ -153,7 +156,7 @@ impl<T> Display for DisplayPropertyRef<'_, T> {
                 }
             }
             PropertyReference::GlobalFunction { global_index, function_index } => {
-                let g = &ctx.public_component.globals[*global_index];
+                let g = &ctx.compilation_unit.globals[*global_index];
                 write!(f, "{}.{}", g.name, g.functions[*function_index].name)
             }
         }

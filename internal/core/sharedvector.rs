@@ -1,12 +1,10 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! module for the SharedVector and related things
 #![allow(unsafe_code)]
 #![warn(missing_docs)]
 use core::fmt::Debug;
-#[cfg(not(feature = "std"))]
-use core::iter::FromIterator;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr::NonNull;

@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 import { ColorSchemeSelector } from "color-scheme.slint";
 
@@ -11,6 +11,9 @@ export { ScrollView }
 
 import { ListItem } from "components.slint";
 export { ListItem }
+
+import { LineEdit } from "lineedit.slint";
+export { LineEdit }
 
 import { FluentPalette, FluentFontSettings } from "styling.slint";
 
@@ -24,7 +27,7 @@ export global StyleMetrics  {
     out property <color> textedit-text-color: FluentPalette.foreground;
     out property <color> textedit-background-disabled: FluentPalette.control-disabled;
     out property <color> textedit-text-color-disabled: FluentPalette.text-disabled;
-    out property <bool> dark-color-scheme: FluentPalette.dark-color-scheme;
+    out property <bool> dark-color-scheme: Palette.color-scheme == ColorScheme.dark;
 }
 
 export global Palette {
@@ -39,4 +42,5 @@ export global Palette {
     out property <brush> selection-background: FluentPalette.selection-background;
     out property <brush> selection-foreground: FluentPalette.selection-foreground;
     out property <brush> border: FluentPalette.border;
+    in-out property <ColorScheme> color-scheme <=> FluentPalette.color-scheme;
 }

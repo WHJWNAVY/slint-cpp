@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore langtype typeregister
 
@@ -102,6 +102,9 @@ export component Text inherits Empty {
     in property <TextOverflow> overflow;
     in property <TextWrap> wrap;
     in property <length> letter-spacing;
+    in property <brush> stroke;
+    in property <length> stroke-width;
+    in property <TextStrokeStyle> stroke-style;
     //-default_size_binding:implicit_size
 }
 
@@ -149,6 +152,7 @@ component WindowItem {
     in property <brush> color <=> background;
     in property <string> title: "Slint Window";
     in property <bool> no-frame;
+    in property <length> resize-border;
     in property <bool> always-on-top;
     in property <string> default-font-family;
     in-out property <length> default-font-size; // <=> StyleMetrics.default-font-size  set in apply_default_properties_from_style
@@ -416,6 +420,7 @@ export component NativeSpinBox {
     in-out property <int> value;
     in property <int> minimum;
     in property <int> maximum: 100;
+    in property <int> step-size: 1;    
     callback edited(int /* value */);
     //-is_internal
     //-accepts_focus
@@ -423,12 +428,15 @@ export component NativeSpinBox {
 
 export component NativeSlider {
     in property <bool> enabled: true;
+    out property <bool> has-focus;
     in-out property <float> value;
     in property <float> minimum;
     in property <float> maximum: 100;
     in property <Orientation> orientation: Orientation.horizontal;
     callback changed(float);
+    callback released(float);
     //-is_internal
+    //-accepts_focus
 }
 
 export component NativeProgressIndicator {
@@ -498,6 +506,7 @@ export component NativeTableHeaderSection {
 export component NativeComboBox {
     in-out property <string> current_value;
     in property <bool> enabled: true;
+    in property <bool> has-focus;
     //-is_internal
 }
 
@@ -576,6 +585,7 @@ export global NativePalette {
     out property <brush> selection-background;
     out property <brush> selection-foreground;
     out property <brush> border;
+    in-out property <ColorScheme> color-scheme;
 
     //-is_non_item_type
     //-is_internal

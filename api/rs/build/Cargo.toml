@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 [package]
 name = "slint-build"
@@ -23,6 +23,6 @@ default = []
 [dependencies]
 i-slint-compiler = { workspace = true, features = ["default", "rust", "display-diagnostics", "software-renderer"] }
 
-spin_on = "0.1"
+spin_on = { workspace = true }
 thiserror = "1"
 toml_edit = { workspace = true }

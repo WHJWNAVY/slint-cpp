@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #![doc = include_str!("README.md")]
 #![doc(html_logo_url = "https://slint.dev/logo/slint-logo-square-light.svg")]
@@ -42,6 +42,8 @@ use std::path::Path;
 /// Specify how the resources are embedded by the compiler
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmbedResourcesKind {
+    /// Embeds nothing (only useful for interpreter)
+    Nothing,
     /// Only embed builtin resources
     OnlyBuiltinResources,
     /// Embed all images resources (the content of their files)
@@ -89,14 +91,17 @@ pub struct CompilerConfiguration {
     /// expose the accessible role and properties
     pub accessibility: bool,
 
-    /// Add support for component containers
-    pub enable_component_containers: bool,
+    /// Add support for experimental features
+    pub enable_experimental: bool,
 
     /// The domain used as one of the parameter to the translate function
     pub translation_domain: Option<String>,
 
     /// C++ namespace
     pub cpp_namespace: Option<String>,
+
+    /// Generate debug information for elements (ids, type names)
+    pub debug_info: bool,
 }
 
 impl CompilerConfiguration {
@@ -120,6 +125,7 @@ impl CompilerConfiguration {
             match output_format {
                 #[cfg(feature = "rust")]
                 crate::generator::OutputFormat::Rust => EmbedResourcesKind::EmbedAllResources,
+                crate::generator::OutputFormat::Interpreter => EmbedResourcesKind::Nothing,
                 _ => EmbedResourcesKind::OnlyBuiltinResources,
             }
         };
@@ -140,10 +146,9 @@ impl CompilerConfiguration {
             .filter(|f| *f > 0.)
             .unwrap_or(1.);
 
-        let enable_experimental_features =
-            std::env::var_os("SLINT_ENABLE_EXPERIMENTAL_FEATURES").is_some();
+        let enable_experimental = std::env::var_os("SLINT_ENABLE_EXPERIMENTAL_FEATURES").is_some();
 
-        let enable_component_containers = enable_experimental_features;
+        let debug_info = std::env::var_os("SLINT_EMIT_DEBUG_INFO").is_some();
 
         let cpp_namespace = match output_format {
             #[cfg(feature = "cpp")]
@@ -167,9 +172,10 @@ impl CompilerConfiguration {
             inline_all_elements,
             scale_factor,
             accessibility: true,
-            enable_component_containers,
+            enable_experimental,
             translation_domain: None,
             cpp_namespace,
+            debug_info,
         }
     }
 }
@@ -185,7 +191,9 @@ fn prepare_for_compile(
         compiler_config.accessibility = false;
     }
 
-    let global_type_registry = if compiler_config.enable_component_containers {
+    diagnostics.enable_experimental = compiler_config.enable_experimental;
+
+    let global_type_registry = if compiler_config.enable_experimental {
         crate::typeregister::TypeRegister::builtin_experimental()
     } else {
         crate::typeregister::TypeRegister::builtin()
@@ -200,10 +208,6 @@ pub async fn compile_syntax_node(
     #[allow(unused_mut)] mut compiler_config: CompilerConfiguration,
 ) -> (object_tree::Document, diagnostics::BuildDiagnostics, typeloader::TypeLoader) {
     let mut loader = prepare_for_compile(&mut diagnostics, compiler_config);
-
-    if diagnostics.has_error() {
-        return (crate::object_tree::Document::default(), diagnostics, loader);
-    }
 
     let doc_node: parser::syntax_nodes::Document = doc_node.into();
 
@@ -220,13 +224,13 @@ pub async fn compile_syntax_node(
         &type_registry,
     );
 
-    if let Some((_, node)) = &*doc.root_component.child_insertion_point.borrow() {
+    if let Some((_, _, node)) = &*doc.root_component.child_insertion_point.borrow() {
         diagnostics
             .push_error("@children placeholder not allowed in the final component".into(), node)
     }
 
     if !diagnostics.has_error() {
-        passes::run_passes(&doc, &mut loader, &mut diagnostics).await;
+        passes::run_passes(&doc, &mut loader, false, &mut diagnostics).await;
     } else {
         // Don't run all the passes in case of errors because because some invariants are not met.
         passes::run_import_passes(&doc, &loader, &mut diagnostics);
@@ -237,6 +241,11 @@ pub async fn compile_syntax_node(
     (doc, diagnostics, loader)
 }
 
+/// Pass a file to the compiler and process it fully, applying all the
+/// necessary compilation passes.
+///
+/// This returns a `Tuple` containing the actual cleaned `path` to the file,
+/// a set of `BuildDiagnostics` and a `TypeLoader` with all compilation passes applied.
 pub async fn load_root_file(
     path: &Path,
     version: diagnostics::SourceFileVersion,
@@ -247,8 +256,37 @@ pub async fn load_root_file(
 ) -> (std::path::PathBuf, diagnostics::BuildDiagnostics, typeloader::TypeLoader) {
     let mut loader = prepare_for_compile(&mut diagnostics, compiler_config);
 
-    let path =
-        loader.load_root_file(path, version, source_path, source_code, &mut diagnostics).await;
+    let (path, _) = loader
+        .load_root_file(path, version, source_path, source_code, false, &mut diagnostics)
+        .await;
 
     (path, diagnostics, loader)
+}
+
+/// Pass a file to the compiler and process it fully, applying all the
+/// necessary compilation passes, just like `load_root_file`.
+///
+/// This returns a `Tuple` containing the actual cleaned `path` to the file,
+/// a set of `BuildDiagnostics`, a `TypeLoader` with all compilation passes
+/// applied and another `TypeLoader` with a minimal set of passes applied to it.
+pub async fn load_root_file_with_raw_type_loader(
+    path: &Path,
+    version: diagnostics::SourceFileVersion,
+    source_path: &Path,
+    source_code: String,
+    mut diagnostics: diagnostics::BuildDiagnostics,
+    #[allow(unused_mut)] mut compiler_config: CompilerConfiguration,
+) -> (
+    std::path::PathBuf,
+    diagnostics::BuildDiagnostics,
+    typeloader::TypeLoader,
+    Option<typeloader::TypeLoader>,
+) {
+    let mut loader = prepare_for_compile(&mut diagnostics, compiler_config);
+
+    let (path, raw_type_loader) = loader
+        .load_root_file(path, version, source_path, source_code, true, &mut diagnostics)
+        .await;
+
+    (path, diagnostics, loader, raw_type_loader)
 }

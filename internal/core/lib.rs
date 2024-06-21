@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore sharedvector textlayout
 
@@ -24,6 +24,7 @@ pub mod api;
 pub mod callbacks;
 pub mod component_factory;
 pub mod context;
+pub mod date_time;
 pub mod future;
 pub mod graphics;
 pub mod input;

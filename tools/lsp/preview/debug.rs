@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore fillcolor fontcolor graphviz tpdf
 
@@ -117,8 +117,7 @@ impl State {
 /// to generate a PDF file out of it.
 #[allow(unused)]
 pub fn as_dot(element: &ElementRc, mark_up: Option<ElementRc>) -> ElementMap {
-    let mut state = State::default();
-    state.mark_up = mark_up;
+    let mut state = State { mark_up, ..State::default() };
     state.register_component(
         &Weak::upgrade(&element.borrow().enclosing_component).unwrap(),
         "root".to_string(),
@@ -168,7 +167,7 @@ fn recurse_into_element(state: &mut State, element: &ElementRc) -> (usize, Vec<S
 
 fn add_element_node(state: &mut State, element: &ElementRc, node_number: usize) {
     let e = element.borrow();
-    let layout = if e.debug.iter().any(|d| d.1.is_some()) { ",shape = box" } else { "" };
+    let layout = if e.debug.iter().any(|d| d.layout.is_some()) { ",shape = box" } else { "" };
     let repeated = if e.repeated.is_some() { ",color = blue" } else { "" };
     let component = if matches!(e.base_type, i_slint_compiler::langtype::ElementType::Component(_))
     {

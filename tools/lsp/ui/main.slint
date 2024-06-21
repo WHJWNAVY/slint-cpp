@@ -1,20 +1,21 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore Heade
 
 import { Button, ComboBox, ListView, ScrollView, VerticalBox } from "std-widgets.slint";
 import { ComponentList, ComponentListItem } from "component-list.slint";
-import { DrawArea, DrawAreaMode, LayoutKind, Selection } from "draw-area.slint";
+import { DrawArea, DrawAreaMode, DropMark, LayoutKind, Selection } from "draw-area.slint";
 import { HeaderBar } from "header-bar.slint";
 import { Diagnostics, DiagnosticsOverlay } from "diagnostics-overlay.slint";
 
-export { Diagnostics, LayoutKind }
+export { Diagnostics, DropMark, LayoutKind }
 
 export component PreviewUi inherits Window {
     in property <[ComponentListItem]> known-components;
     in property <[Diagnostics]> diagnostics;
     in property <[Selection]> selections;
+    in-out property <DropMark> drop-mark;
     in property <[string]> known-styles;
     in property <bool> experimental: false;
     in property <bool> show-preview-ui: true;
@@ -23,15 +24,18 @@ export component PreviewUi inherits Window {
     in-out property <string> current-style;
     out property <bool> design-mode;
 
-    pure callback can-drop(/* component_type */ string, /* x */ length, /* y */ length) -> bool;
+    callback add_new_component();
+    pure callback can-drop(/* component_type */ string, /* x */ length, /* y */ length, /* on-drop-area */ bool) -> bool;
     callback drop(/* component_type */ string, /* x */ length, /* y */ length);
-    callback selected-element-update-geometry(/* x */ length, /* y */ length, /* width */ length, /* height */ length);
-    callback selected-element-delete();
+    callback reselect();
     callback select-at(/* x */ length, /* y */ length, /* enter_component? */ bool);
     callback select-behind(/* x */ length, /* y */ length, /* enter_component* */ bool, /* reverse */ bool);
+    callback selected-element-can-move-to(/* x */ length, /* y */ length, /* mouse-x */ length, /* mouse-y */ length) -> bool;
+    callback selected-element-delete();
+    callback selected-element-move(/* x */ length, /* y */ length, /* mouse-x */ length, /* mouse-y */ length);
+    callback selected-element-resize(/* x */ length, /* y */ length, /* width */ length, /* height */ length);
     callback show-document(/* url */ string, /* line */ int, /* column */ int);
     callback style-changed();
-    callback reselect();
     callback unselect();
 
     property <length> border: 20px;
@@ -103,17 +107,20 @@ export component PreviewUi inherits Window {
                                 preview-area-width: draw-area.preview-area-width;
                                 preview-area-height: draw-area.preview-area-height;
 
-                                can-drop(c, x, y) => {
-                                    return root.can-drop(c, x, y);
+                                can-drop(c, x, y, oda) => {
+                                    return root.can-drop(c, x, y, oda);
                                 }
                                 drop(c, x, y) => {
                                     root.drop(c, x, y);
+                                }
+                                add_new_component => {
+                                    return root.add_new_component();
                                 }
                             }
                         }
 
                         states [
-                        visible when !pick-button.checked: {
+                            visible when !pick-button.checked: {
                                 width: 0px;
                             }
                             hidden when pick-button.checked: {
@@ -127,12 +134,19 @@ export component PreviewUi inherits Window {
                         diagnostics <=> root.diagnostics;
                         preview-area <=> root.preview-area;
                         selections <=> root.selections;
+                        drop-mark <=> root.drop-mark;
 
                         select-at(x, y, enter_component) => {
                             root.select-at(x, y, enter_component);
                         }
-                        selected-element-update-geometry(x, y, w, h) => {
-                            root.selected-element-update-geometry(x, y, w, h);
+                        selected-element-resize(x, y, w, h) => {
+                            root.selected-element-resize(x, y, w, h);
+                        }
+                        selected-element-can-move-to(x, y, mx, my) => {
+                            root.selected-element-can-move-to(x, y, mx, my);
+                        }
+                        selected-element-move(x, y, mx, my) => {
+                            root.selected-element-move(x, y, mx, my);
                         }
                         selected-element-delete() => {
                             root.selected-element-delete();

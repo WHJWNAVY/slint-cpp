@@ -1,5 +1,5 @@
 # Copyright © SixtyFPS GmbH <info@slint.dev>
-# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+# SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 import pytest
 from slint import load_file, CompileError
@@ -35,7 +35,11 @@ def test_load_file_wrapper():
     instance.say_hello = lambda x: "from here: " + x
     assert instance.say_hello("wohoo") == "from here: wohoo"
 
+    assert instance.plus_one(42) == 43
+
     assert instance.MyGlobal.global_prop == "This is global"
+
+    assert instance.MyGlobal.minus_one(100) == 99
 
     del instance
 

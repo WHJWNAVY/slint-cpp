@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 #![doc = include_str!("README.md")]
 #![doc(html_logo_url = "https://slint.dev/logo/slint-logo-square-light.svg")]
@@ -15,6 +15,7 @@ use i_slint_core::graphics::BorderRadius;
 use i_slint_core::graphics::FontRequest;
 use i_slint_core::graphics::{euclid, rendering_metrics_collector::RenderingMetricsCollector};
 use i_slint_core::item_rendering::ItemRenderer;
+use i_slint_core::items::TextWrap;
 use i_slint_core::lengths::{
     LogicalLength, LogicalPoint, LogicalRect, LogicalSize, PhysicalPx, ScaleFactor,
 };
@@ -365,6 +366,7 @@ impl RendererSealed for FemtoVGRenderer {
         text: &str,
         max_width: Option<LogicalLength>,
         scale_factor: ScaleFactor,
+        _text_wrap: TextWrap, //TODO: Add support for char-wrap
     ) -> LogicalSize {
         crate::fonts::text_size(&font_request, scale_factor, text, max_width)
     }

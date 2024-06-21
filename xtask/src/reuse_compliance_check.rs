@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use anyhow::{Context, Result};
 
@@ -19,12 +19,6 @@ where
 
 pub fn find_reuse() -> Result<PathBuf> {
     which::which("reuse").context("Failed to find reuse")
-}
-
-pub fn install_reuse(sh: &Shell) -> Result<PathBuf> {
-    cmd(sh, "pip", &["install", "reuse"])?.run().context("Failed to pip install reuse.")?;
-
-    find_reuse().context("Could not find reuse after pip installing it")
 }
 
 pub fn reuse_download(sh: &Shell, reuse: &Path) -> Result<String> {
@@ -371,7 +365,7 @@ impl ReuseComplianceCheck {
 
         let sh = Shell::new()?;
 
-        let reuse = find_reuse().or_else(|_| install_reuse(&sh))?;
+        let reuse = find_reuse().context("Can not find reuse. Please make sure it is installed")?;
 
         println!("Reuse binary \"{}\".", reuse.to_string_lossy());
 

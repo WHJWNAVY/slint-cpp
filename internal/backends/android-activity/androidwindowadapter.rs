@@ -1,20 +1,28 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 use super::*;
 use crate::javahelper::{print_jni_error, JavaHelper};
-use android_activity::input::{InputEvent, KeyAction, Keycode, MotionAction, MotionEvent};
+use android_activity::input::{
+    ButtonState, InputEvent, KeyAction, Keycode, MotionAction, MotionEvent,
+};
 use android_activity::{InputStatus, MainEvent, PollEvent};
-use i_slint_core::api::{PhysicalPosition, PhysicalSize, PlatformError, Window};
+use i_slint_core::api::{LogicalPosition, PhysicalPosition, PhysicalSize, PlatformError, Window};
+use i_slint_core::items::ColorScheme;
 use i_slint_core::platform::{
     Key, PointerEventButton, WindowAdapter, WindowEvent, WindowProperties,
 };
+use i_slint_core::timers::{Timer, TimerMode};
 use i_slint_core::window::{InputMethodRequest, WindowInner};
 use i_slint_core::{Property, SharedString};
 use i_slint_renderer_skia::SkiaRenderer;
-use raw_window_handle::HasRawWindowHandle;
 use std::cell::Cell;
 use std::rc::Rc;
+
+struct LongPressDetection {
+    _timer: Timer,
+    position: LogicalPosition,
+}
 
 pub struct AndroidWindowAdapter {
     app: AndroidApp,
@@ -22,8 +30,8 @@ pub struct AndroidWindowAdapter {
     pub(crate) renderer: i_slint_renderer_skia::SkiaRenderer,
     pub(crate) event_queue: EventQueue,
     pub(crate) pending_redraw: Cell<bool>,
-    java_helper: JavaHelper,
-    pub(crate) dark_color_scheme: core::pin::Pin<Box<Property<bool>>>,
+    pub(super) java_helper: JavaHelper,
+    pub(crate) color_scheme: core::pin::Pin<Box<Property<ColorScheme>>>,
     pub(crate) fullscreen: Cell<bool>,
     /// The offset at which the Slint view is drawn in the native window (account for status bar)
     pub offset: Cell<PhysicalPosition>,
@@ -31,6 +39,9 @@ pub struct AndroidWindowAdapter {
     /// Whether the cursor handle should be shown.
     /// They are shown when taping, but hidden whenever keys are pressed
     pub(crate) show_cursor_handles: Cell<bool>,
+
+    long_press: RefCell<Option<LongPressDetection>>,
+    last_pressed_state: Cell<ButtonState>,
 }
 
 impl WindowAdapter for AndroidWindowAdapter {
@@ -150,16 +161,21 @@ impl i_slint_core::window::WindowAdapterInternal for AndroidWindowAdapter {
         });
     }
 
-    fn dark_color_scheme(&self) -> bool {
-        self.dark_color_scheme.as_ref().get()
+    fn color_scheme(&self) -> ColorScheme {
+        self.color_scheme.as_ref().get()
     }
 }
 
 impl AndroidWindowAdapter {
     pub fn new(app: AndroidApp) -> Rc<Self> {
         let java_helper = JavaHelper::new(&app).unwrap_or_else(|e| print_jni_error(&app, e));
-        let dark_color_scheme = Box::pin(Property::new(
-            java_helper.dark_color_scheme().unwrap_or_else(|e| print_jni_error(&app, e)),
+        let color_scheme = Box::pin(Property::new(
+            match java_helper.color_scheme().unwrap_or_else(|e| print_jni_error(&app, e)) {
+                0x10 => ColorScheme::Light,  // UI_MODE_NIGHT_NO(0x10)
+                0x20 => ColorScheme::Dark,   // UI_MODE_NIGHT_YES(0x20)
+                0x0 => ColorScheme::Unknown, // UI_MODE_NIGHT_UNDEFINED
+                _ => ColorScheme::Unknown,
+            },
         ));
         Rc::<Self>::new_cyclic(|w| Self {
             app,
@@ -167,11 +183,13 @@ impl AndroidWindowAdapter {
             renderer: SkiaRenderer::default(),
             event_queue: Default::default(),
             pending_redraw: Default::default(),
-            dark_color_scheme,
+            color_scheme,
             java_helper,
             fullscreen: Cell::new(false),
             offset: Default::default(),
             show_cursor_handles: Cell::new(false),
+            long_press: RefCell::default(),
+            last_pressed_state: Cell::new(ButtonState(0)),
         })
     }
 
@@ -201,22 +219,12 @@ impl AndroidWindowAdapter {
                             .dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor });
                     }
 
-                    // Safety: This is safe because the handle remains valid; the next rwh release provides `new()` without unsafe.
-                    let window_handle = unsafe {
-                        raw_window_handle::WindowHandle::borrow_raw(
-                            w.raw_window_handle(),
-                            raw_window_handle::ActiveHandle::new_unchecked(),
-                        )
-                    };
-                    // Safety: The Android display handle is empty.
-                    let display_handle = unsafe {
-                        raw_window_handle::DisplayHandle::borrow_raw(
-                            raw_window_handle::RawDisplayHandle::Android(
-                                raw_window_handle::AndroidDisplayHandle::empty(),
-                            ),
-                        )
-                    };
-                    self.renderer.set_window_handle(window_handle, display_handle, size)?;
+                    self.renderer.set_window_handle(
+                        Rc::new(w),
+                        Rc::new(raw_window_handle::DisplayHandle::android()),
+                        size,
+                        scale_factor,
+                    )?;
                     self.resize();
                 }
             }
@@ -262,24 +270,43 @@ impl AndroidWindowAdapter {
                     None => InputStatus::Unhandled,
                 },
                 InputEvent::MotionEvent(motion_event) => match motion_event.action() {
-                    MotionAction::Down | MotionAction::ButtonPress | MotionAction::PointerDown => {
-                        self.show_cursor_handles.set(true);
+                    MotionAction::ButtonPress => {
                         self.window.dispatch_event(WindowEvent::PointerPressed {
                             position: position_for_event(motion_event, self.offset.get())
                                 .to_logical(self.window.scale_factor()),
+                            button: button_for_event(motion_event, &self.last_pressed_state),
+                        });
+                        InputStatus::Handled
+                    }
+                    MotionAction::Down => {
+                        let position = position_for_event(motion_event, self.offset.get())
+                            .to_logical(self.window.scale_factor());
+                        self.show_cursor_handles.set(true);
+                        let _timer = Timer::default();
+                        _timer.start(
+                            TimerMode::SingleShot,
+                            self.java_helper
+                                .long_press_timeout()
+                                .unwrap_or_else(|e| print_jni_error(&self.app, e)),
+                            long_press_timeout,
+                        );
+                        self.long_press.replace(Some(LongPressDetection { position, _timer }));
+                        self.window.dispatch_event(WindowEvent::PointerPressed {
+                            position,
                             button: PointerEventButton::Left,
                         });
                         InputStatus::Handled
                     }
-                    MotionAction::ButtonRelease | MotionAction::PointerUp => {
+                    MotionAction::ButtonRelease => {
                         self.window.dispatch_event(WindowEvent::PointerReleased {
                             position: position_for_event(motion_event, self.offset.get())
                                 .to_logical(self.window.scale_factor()),
-                            button: PointerEventButton::Left,
+                            button: button_for_event(motion_event, &self.last_pressed_state),
                         });
                         InputStatus::Handled
                     }
                     MotionAction::Up => {
+                        self.long_press.take();
                         self.window.dispatch_event(WindowEvent::PointerReleased {
                             position: position_for_event(motion_event, self.offset.get())
                                 .to_logical(self.window.scale_factor()),
@@ -290,13 +317,20 @@ impl AndroidWindowAdapter {
                         InputStatus::Handled
                     }
                     MotionAction::Move | MotionAction::HoverMove => {
-                        self.window.dispatch_event(WindowEvent::PointerMoved {
-                            position: position_for_event(motion_event, self.offset.get())
-                                .to_logical(self.window.scale_factor()),
-                        });
+                        let position = position_for_event(motion_event, self.offset.get())
+                            .to_logical(self.window.scale_factor());
+                        let mut lp = self.long_press.borrow_mut();
+                        let sq = |x| x * x;
+                        if lp.as_ref().map_or(false, |lp| {
+                            sq(lp.position.x - position.x) + sq(lp.position.y - position.y) > 100.
+                        }) {
+                            *lp = None;
+                        }
+                        self.window.dispatch_event(WindowEvent::PointerMoved { position });
                         InputStatus::Handled
                     }
                     MotionAction::Cancel | MotionAction::Outside => {
+                        self.long_press.take();
                         self.window.dispatch_event(WindowEvent::PointerExited);
                         InputStatus::Handled
                     }
@@ -378,11 +412,88 @@ impl AndroidWindowAdapter {
     }
 }
 
+fn long_press_timeout() {
+    let Some(adaptor) = CURRENT_WINDOW.with_borrow(|x| x.upgrade()) else { return };
+    let Some(current) = adaptor.long_press.take() else { return };
+    if let Some(focus_item) =
+        i_slint_core::window::WindowInner::from_pub(&adaptor.window).focus_item.borrow().upgrade()
+    {
+        if let Some(text_input) = focus_item.downcast::<i_slint_core::items::TextInput>() {
+            let text_input = text_input.as_pin_ref();
+            let geometry = focus_item
+                .geometry()
+                .translate(focus_item.map_to_window(Default::default()).to_vector());
+            if !geometry.contains(i_slint_core::lengths::logical_point_from_api(current.position)) {
+                return;
+            };
+            let (cursor, anchor) = text_input.selection_anchor_and_cursor();
+            if cursor == anchor {
+                let text = text_input.text();
+                if text.len() > cursor && text.as_bytes()[cursor] != b'\n' {
+                    let adaptor = adaptor.clone() as Rc<dyn WindowAdapter>;
+                    text_input.select_word(&adaptor, &focus_item);
+                }
+            }
+            adaptor
+                .java_helper
+                .show_action_menu()
+                .unwrap_or_else(|e| print_jni_error(&adaptor.app, e))
+        }
+    };
+}
+
 fn position_for_event(motion_event: &MotionEvent, offset: PhysicalPosition) -> PhysicalPosition {
     motion_event.pointers().next().map_or_else(Default::default, |p| PhysicalPosition {
         x: p.x() as i32 - offset.x,
         y: p.y() as i32 - offset.y,
     })
+}
+
+fn button_for_event(
+    motion_event: &MotionEvent,
+    last_pressed_cell: &Cell<ButtonState>,
+) -> PointerEventButton {
+    //
+    // The motion_event API has a method called action_button() which can be used to directly
+    // determine the button associated with the event. However, the disadvantage of using the
+    // action_button() API is that it relies on NDK 33 or higher, which implies that the output
+    // application will only run on Android 13 or higher.
+    //
+    // This functionally equivalent method of computing the action button relies on the
+    // button_state() call from the motion event, rather than action_button(). It is a bit more
+    // complex than using action_button() directly, since the previous button state must be
+    // tracked and used in the calculation for computing which button was toggled. However, this
+    // will run on Android 12 (and possibly lower).
+    //
+    // See here for further discussion:
+    //
+    // https://stackoverflow.com/questions/75718566/amotionevent-getbuttonstate-returns-0-for-every-button-during-mouse-button-relea
+    //
+    let cur_pressed_state = motion_event.button_state();
+    let last_pressed_state = last_pressed_cell.get();
+    let toggled = match motion_event.action() {
+        MotionAction::ButtonPress => {
+            last_pressed_cell.set(cur_pressed_state);
+            ButtonState((last_pressed_state.0 ^ cur_pressed_state.0) & cur_pressed_state.0)
+        }
+        MotionAction::ButtonRelease => {
+            last_pressed_cell.set(cur_pressed_state);
+            ButtonState((last_pressed_state.0 ^ cur_pressed_state.0) & last_pressed_state.0)
+        }
+        _ => ButtonState(0),
+    };
+
+    // if multiple buttons toggled, primary takes precedence, then secondary, etc.
+    if toggled.primary() {
+        return PointerEventButton::Left;
+    }
+    if toggled.secondary() {
+        return PointerEventButton::Right;
+    }
+    if toggled.teriary() {
+        return PointerEventButton::Middle;
+    }
+    return PointerEventButton::Other;
 }
 
 fn map_key_event(key_event: &android_activity::input::KeyEvent) -> Option<WindowEvent> {

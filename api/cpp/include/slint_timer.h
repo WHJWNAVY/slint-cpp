@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore singleshot
 
@@ -29,9 +29,9 @@ struct Timer
     template<std::invocable F>
     Timer(std::chrono::milliseconds interval, F callback)
         : id(cbindgen_private::slint_timer_start(
-                0, TimerMode::Repeated, interval.count(),
-                [](void *data) { (*reinterpret_cast<F *>(data))(); }, new F(std::move(callback)),
-                [](void *data) { delete reinterpret_cast<F *>(data); }))
+                  0, TimerMode::Repeated, interval.count(),
+                  [](void *data) { (*reinterpret_cast<F *>(data))(); }, new F(std::move(callback)),
+                  [](void *data) { delete reinterpret_cast<F *>(data); }))
     {
     }
     Timer(const Timer &) = delete;

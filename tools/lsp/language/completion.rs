@@ -1,11 +1,10 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore rfind
 
-use super::component_catalog::all_exported_components;
-use super::DocumentCache;
-use crate::common::ComponentInformation;
+use crate::common::component_catalog::all_exported_components;
+use crate::common::{self, DocumentCache};
 use crate::util::{lookup_current_element_type, map_position, with_lookup_ctx};
 
 #[cfg(target_arch = "wasm32")]
@@ -138,8 +137,8 @@ pub(crate) fn completion_at(
     } else if let Some(n) = syntax_nodes::Binding::new(node.clone()) {
         if let Some(colon) = n.child_token(SyntaxKind::Colon) {
             if offset >= colon.text_range().end().into() {
-                return with_lookup_ctx(&document_cache.documents, node, |ctx| {
-                    resolve_expression_scope(ctx).map(Into::into)
+                return with_lookup_ctx(document_cache, node, |ctx| {
+                    resolve_expression_scope(ctx, document_cache, snippet_support).map(Into::into)
                 })?;
             }
         }
@@ -158,8 +157,8 @@ pub(crate) fn completion_at(
         if offset < double_arrow_range.end().into() {
             return None;
         }
-        return with_lookup_ctx(&document_cache.documents, node, |ctx| {
-            resolve_expression_scope(ctx)
+        return with_lookup_ctx(document_cache, node, |ctx| {
+            resolve_expression_scope(ctx, document_cache, snippet_support)
         })?;
     } else if let Some(n) = syntax_nodes::CallbackConnection::new(node.clone()) {
         if token.kind() != SyntaxKind::Identifier {
@@ -231,17 +230,17 @@ pub(crate) fn completion_at(
             );
         }
 
-        return with_lookup_ctx(&document_cache.documents, node, |ctx| {
-            resolve_expression_scope(ctx).map(Into::into)
+        return with_lookup_ctx(document_cache, node, |ctx| {
+            resolve_expression_scope(ctx, document_cache, snippet_support).map(Into::into)
         })?;
     } else if let Some(q) = syntax_nodes::QualifiedName::new(node.clone()) {
         match q.parent()?.kind() {
             SyntaxKind::Element => {
                 // auto-complete the components
-                let global_tr = document_cache.documents.global_type_registry.borrow();
+                let global_tr = document_cache.global_type_registry();
                 let tr = q
                     .source_file()
-                    .and_then(|sf| document_cache.documents.get_document(sf.path()))
+                    .and_then(|sf| document_cache.get_document_for_source_file(sf))
                     .map(|doc| &doc.local_registry)
                     .unwrap_or(&global_tr);
 
@@ -273,14 +272,15 @@ pub(crate) fn completion_at(
                 return resolve_type_scope(token, document_cache).map(Into::into);
             }
             SyntaxKind::Expression => {
-                return with_lookup_ctx(&document_cache.documents, node, |ctx| {
+                return with_lookup_ctx(document_cache, node, |ctx| {
                     let it = q.children_with_tokens().filter_map(|t| t.into_token());
                     let mut it = it.skip_while(|t| {
                         t.kind() != SyntaxKind::Identifier && t.token != token.token
                     });
                     let first = it.next();
                     if first.as_ref().map_or(true, |f| f.token == token.token) {
-                        return resolve_expression_scope(ctx).map(Into::into);
+                        return resolve_expression_scope(ctx, document_cache, snippet_support)
+                            .map(Into::into);
                     }
                     let first = i_slint_compiler::parser::normalize_identifier(first?.text());
                     let global = i_slint_compiler::lookup::global_lookup();
@@ -314,13 +314,12 @@ pub(crate) fn completion_at(
         let import = syntax_nodes::ImportSpecifier::new(node.parent()?)?;
 
         let path = document_cache
-            .documents
             .resolve_import_path(
                 Some(&token.into()),
                 import.child_text(SyntaxKind::StringLiteral)?.trim_matches('\"'),
             )?
             .0;
-        let doc = document_cache.documents.get_document(&path)?;
+        let doc = document_cache.get_document_by_path(&path)?;
         return Some(
             doc.exports
                 .iter()
@@ -387,7 +386,7 @@ pub(crate) fn completion_at(
             .collect();
         return Some(r);
     } else if node.kind() == SyntaxKind::PropertyAnimation {
-        let global_tr = document_cache.documents.global_type_registry.borrow();
+        let global_tr = document_cache.global_type_registry();
         let r = global_tr
             .property_animation_type_for_property(Type::Float32)
             .property_list()
@@ -423,10 +422,10 @@ fn resolve_element_scope(
     element: syntax_nodes::Element,
     document_cache: &DocumentCache,
 ) -> Option<Vec<CompletionItem>> {
-    let global_tr = document_cache.documents.global_type_registry.borrow();
+    let global_tr = document_cache.global_type_registry();
     let tr = element
         .source_file()
-        .and_then(|sf| document_cache.documents.get_document(sf.path()))
+        .and_then(|sf| document_cache.get_document_for_source_file(sf))
         .map(|doc| &doc.local_registry)
         .unwrap_or(&global_tr);
     let element_type = lookup_current_element_type((*element).clone(), tr).unwrap_or_default();
@@ -517,13 +516,49 @@ fn de_normalize_property_name_with_element<'a>(element: &ElementRc, prop: &'a st
     }
 }
 
-fn resolve_expression_scope(lookup_context: &LookupCtx) -> Option<Vec<CompletionItem>> {
+fn resolve_expression_scope(
+    lookup_context: &LookupCtx,
+    document_cache: &common::DocumentCache,
+    snippet_support: bool,
+) -> Option<Vec<CompletionItem>> {
     let mut r = Vec::new();
     let global = i_slint_compiler::lookup::global_lookup();
     global.for_each_entry(lookup_context, &mut |str, expr| -> Option<()> {
         r.push(completion_item_from_expression(str, expr));
         None
     });
+    if snippet_support {
+        if let Some(token) = lookup_context.current_token.as_ref().and_then(|t| match t {
+            i_slint_compiler::parser::NodeOrToken::Node(n) => n.first_token(),
+            i_slint_compiler::parser::NodeOrToken::Token(t) => Some(t.clone()),
+        }) {
+            let mut available_types: HashSet<String> = r.iter().map(|c| c.label.clone()).collect();
+            build_import_statements_edits(
+                &token,
+                document_cache,
+                &mut |ci: &common::ComponentInformation| {
+                    if !ci.is_global || !ci.is_exported || available_types.contains(&ci.name) {
+                        false
+                    } else {
+                        available_types.insert(ci.name.clone());
+                        true
+                    }
+                },
+                &mut |exported_name, file, the_import| {
+                    r.push(CompletionItem {
+                        label: format!("{} (import from \"{}\")", exported_name, file),
+                        insert_text: Some(exported_name.to_string()),
+                        insert_text_format: Some(InsertTextFormat::SNIPPET),
+                        filter_text: Some(exported_name.to_string()),
+                        kind: Some(CompletionItemKind::CLASS),
+                        detail: Some(format!("(import from \"{}\")", file)),
+                        additional_text_edits: Some(vec![the_import]),
+                        ..Default::default()
+                    });
+                },
+            );
+        }
+    }
     Some(r)
 }
 
@@ -575,10 +610,10 @@ fn resolve_type_scope(
     token: SyntaxToken,
     document_cache: &DocumentCache,
 ) -> Option<Vec<CompletionItem>> {
-    let global_tr = document_cache.documents.global_type_registry.borrow();
+    let global_tr = document_cache.global_type_registry();
     let tr = token
         .source_file()
-        .and_then(|sf| document_cache.documents.get_document(sf.path()))
+        .and_then(|sf| document_cache.get_document_for_source_file(sf))
         .map(|doc| &doc.local_registry)
         .unwrap_or(&global_tr);
     Some(
@@ -631,18 +666,18 @@ fn complete_path_in_string(base: &Path, text: &str, offset: u32) -> Option<Vec<C
 /// import and should already be in result
 fn add_components_to_import(
     token: &SyntaxToken,
-    document_cache: &mut DocumentCache,
+    document_cache: &common::DocumentCache,
     mut available_types: HashSet<String>,
     result: &mut Vec<CompletionItem>,
 ) {
     build_import_statements_edits(
         token,
         document_cache,
-        &mut |exported_name| {
-            if available_types.contains(exported_name) {
+        &mut |ci: &common::ComponentInformation| {
+            if ci.is_global || !ci.is_exported || available_types.contains(&ci.name) {
                 false
             } else {
-                available_types.insert(exported_name.to_string());
+                available_types.insert(ci.name.clone());
                 true
             }
         },
@@ -779,25 +814,20 @@ pub fn create_import_edit(
 /// Call `add_edit` with the component name and file name and TextEdit for every component for which the `filter` callback returns true
 pub fn build_import_statements_edits(
     token: &SyntaxToken,
-    document_cache: &mut DocumentCache,
-    filter: &mut dyn FnMut(&str) -> bool,
+    document_cache: &common::DocumentCache,
+    filter: &mut dyn FnMut(&common::ComponentInformation) -> bool,
     add_edit: &mut dyn FnMut(&str, &str, TextEdit),
 ) -> Option<()> {
     // Find out types that can be imported
     let current_file = token.source_file.path().to_owned();
     let current_uri = lsp_types::Url::from_file_path(&current_file).ok();
-    let current_doc = document_cache.documents.get_document(&current_file)?.node.as_ref()?;
+    let current_doc =
+        document_cache.get_document_for_source_file(&token.source_file)?.node.as_ref()?;
     let (missing_import_location, known_import_locations) = find_import_locations(current_doc);
 
     let exports = {
         let mut tmp = Vec::new();
-        all_exported_components(
-            document_cache,
-            &mut move |ci: &ComponentInformation| {
-                !filter(&ci.name) || ci.is_global || !ci.is_exported
-            },
-            &mut tmp,
-        );
+        all_exported_components(document_cache, filter, &mut tmp);
         tmp
     };
 
@@ -832,7 +862,6 @@ fn is_followed_by_brace(token: &SyntaxToken) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::language::uri_to_file;
 
     /// Given a source text containing the unicode emoji `🔺`, the emoji will be removed and then an autocompletion request will be done as if the cursor was there
     fn get_completions(file: &str) -> Option<Vec<CompletionItem>> {
@@ -841,7 +870,7 @@ mod tests {
         let source = file.replace(CURSOR_EMOJI, "");
         let (mut dc, uri, _) = crate::language::test::loaded_document_cache(source);
 
-        let doc = dc.documents.get_document(&uri_to_file(&uri).unwrap()).unwrap();
+        let doc = dc.get_document(&uri).unwrap();
         let token = crate::language::token_at_offset(doc.node.as_ref().unwrap(), offset)?;
         let caps = CompletionClientCapabilities {
             completion_item: Some(lsp_types::CompletionItemCapability {
@@ -894,6 +923,14 @@ mod tests {
             res.iter().find(|ci| ci.label == "self").unwrap();
             res.iter().find(|ci| ci.label == "root").unwrap();
             res.iter().find(|ci| ci.label == "TextInputInterface").unwrap();
+            let palette = res
+                .iter()
+                .find(|ci| ci.insert_text.as_ref().is_some_and(|t| t == "Palette"))
+                .unwrap();
+            assert_eq!(
+                palette.additional_text_edits.as_ref().unwrap()[0].new_text,
+                "import { Palette } from \"std-widgets.slint\";\n"
+            );
 
             assert!(!res.iter().any(|ci| ci.label == "text"));
             assert!(!res.iter().any(|ci| ci.label == "red"));
@@ -1045,7 +1082,7 @@ mod tests {
         "#;
         let res = get_completions(source).unwrap();
         res.iter().find(|ci| ci.label == "LineEdit").unwrap();
-        res.iter().find(|ci| ci.label == "StyleMetrics").unwrap();
+        res.iter().find(|ci| ci.label == "Palette").unwrap();
 
         let source = r#"
             import { Foo, 🔺} from "std-widgets.slint"

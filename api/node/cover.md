@@ -6,7 +6,7 @@
 [Slint](https://slint.dev/) is a UI toolkit that supports different programming languages.
 Slint-node is the integration with [Node.js](https://nodejs.org/en) and [Deno](https://deno.com).
 
-To get started you use the [walk-through tutorial](https://slint.dev/docs/tutorial/node).
+To get started you use the [walk-through tutorial](https://slint.dev/docs/quickstart/node).
 We also have a [Getting Started Template](https://github.com/slint-ui/slint-nodejs-template) repository with
 the code of a minimal application using Slint that can be used as a starting point to your program.
 
@@ -34,7 +34,7 @@ To use Slint with Deno, ensure the following programs are installed:
 Slint-node comes with pre-built binaries for macOS, Linux, and Windows. If you'd like to use Slint-node on a system
 without pre-built binaries, you need to additional software:
 
-  * **[Rust compiler](https://www.rust-lang.org/tools/install)** (1.70 or newer)
+  * **[Rust compiler](https://www.rust-lang.org/tools/install)** (1.73 or newer)
   * Depending on your operating system, you may need additional components. For a list of required system libraries,
     see <https://github.com/slint-ui/slint/blob/master/docs/building.md#prerequisites>.
 

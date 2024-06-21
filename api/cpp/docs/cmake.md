@@ -32,7 +32,7 @@ Steps:
 3. From "Assets" ("XXX" refers to the version of the latest release),
 
    * for Linux x86-64 architecture - download `slint-cpp-XXX-Linux-x86_64.tar.gz`
-   * for Windows x86-64 architecture - download `slint-cpp-XXX-win64.exe`
+   * for Windows x86-64 architecture - download `slint-cpp-XXX-win64-MSVC.exe`
 
 4. Unpack the downloaded archive (Linux) or run the installer executable (Windows).
 
@@ -49,7 +49,7 @@ In the next section you will learn how to use the installed library in your appl
 First you need to install the prerequisites:
 
 * Install Rust by following the [Rust Getting Started Guide](https://www.rust-lang.org/learn/get-started). If you already
-  have Rust installed, make sure that it's at least version 1.70 or newer. You can check which version you have installed
+  have Rust installed, make sure that it's at least version 1.73 or newer. You can check which version you have installed
   by running `rustc --version`. Once this is done, you should have the `rustc` compiler and the `cargo` build system installed in your path.
 
 You can either choose to compile Slint from source along with your application or include Slint as an external CMake package.

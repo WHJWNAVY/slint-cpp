@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 // cSpell: ignore backtab
 
@@ -17,7 +17,7 @@ use crate::input::{
 };
 use crate::item_tree::ItemRc;
 use crate::item_tree::{ItemTreeRc, ItemTreeRef, ItemTreeVTable, ItemTreeWeak};
-use crate::items::{InputType, ItemRef, MouseCursor};
+use crate::items::{ColorScheme, InputType, ItemRef, MouseCursor};
 use crate::lengths::{LogicalLength, LogicalPoint, LogicalRect, SizeLengths};
 use crate::properties::{Property, PropertyTracker};
 use crate::renderer::Renderer;
@@ -200,9 +200,9 @@ pub trait WindowAdapterInternal {
     // used for accessibility
     fn handle_focus_change(&self, _old: Option<ItemRc>, _new: Option<ItemRc>) {}
 
-    /// returns wether a dark theme is used
-    fn dark_color_scheme(&self) -> bool {
-        false
+    /// returns the color scheme used
+    fn color_scheme(&self) -> ColorScheme {
+        ColorScheme::Unknown
     }
 }
 
@@ -324,7 +324,7 @@ struct WindowPropertiesTracker {
 }
 
 impl crate::properties::PropertyDirtyHandler for WindowPropertiesTracker {
-    fn notify(&self) {
+    fn notify(self: Pin<&Self>) {
         let win = self.window_adapter_weak.clone();
         crate::timers::Timer::single_shot(Default::default(), move || {
             if let Some(window_adapter) = win.upgrade() {
@@ -339,7 +339,7 @@ struct WindowRedrawTracker {
 }
 
 impl crate::properties::PropertyDirtyHandler for WindowRedrawTracker {
-    fn notify(&self) {
+    fn notify(self: Pin<&Self>) {
         if let Some(window_adapter) = self.window_adapter_weak.upgrade() {
             window_adapter.request_redraw();
         };
@@ -618,6 +618,8 @@ impl WindowInner {
         {
             self.close_popup();
         }
+
+        crate::properties::ChangeTracker::run_change_handlers();
     }
 
     /// Called by the input code's internal timer to send an event that was delayed
@@ -657,6 +659,7 @@ impl WindowInner {
                 &focus_item,
             ) == crate::input::KeyEventResult::EventAccepted
             {
+                crate::properties::ChangeTracker::run_change_handlers();
                 return;
             }
             item = focus_item.parent_item();
@@ -674,6 +677,7 @@ impl WindowInner {
         {
             self.focus_previous_item();
         }
+        crate::properties::ChangeTracker::run_change_handlers();
     }
 
     /// Installs a binding on the specified property that's toggled whenever the text cursor is supposed to be visible or not.
@@ -691,13 +695,24 @@ impl WindowInner {
     }
 
     /// Sets the focus to the item pointed to by item_ptr. This will remove the focus from any
-    /// currently focused item.
-    pub fn set_focus_item(&self, focus_item: &ItemRc) {
+    /// currently focused item. If set_focus is false, the focus is cleared.
+    pub fn set_focus_item(&self, new_focus_item: &ItemRc, set_focus: bool) {
         if self.prevent_focus_change.get() {
             return;
         }
+        if !set_focus {
+            let current_focus_item = self.focus_item.borrow().clone();
+            if let Some(current_focus_item_rc) = current_focus_item.upgrade() {
+                if current_focus_item_rc != *new_focus_item {
+                    // can't clear focus unless called with currently focused item.
+                    return;
+                }
+            }
+        }
+
         let old = self.take_focus_item();
-        let new = self.move_focus(focus_item.clone(), next_focus_item);
+        let new =
+            if set_focus { self.move_focus(new_focus_item.clone(), next_focus_item) } else { None };
         let window_adapter = self.window_adapter();
         if let Some(window_adapter) = window_adapter.internal(crate::InternalToken) {
             window_adapter.handle_focus_change(old, new);
@@ -888,6 +903,9 @@ impl WindowInner {
         let size = self.window_adapter().size();
         self.set_window_item_geometry(size.to_logical(self.scale_factor()).to_euclid());
         self.window_adapter().renderer().resize(size).unwrap();
+        if let Some(hook) = self.ctx.0.window_shown_hook.borrow_mut().as_mut() {
+            hook(&self.window_adapter());
+        }
         Ok(())
     }
 
@@ -906,11 +924,11 @@ impl WindowInner {
         result
     }
 
-    /// returns wether a dark theme is used
-    pub fn dark_color_scheme(&self) -> bool {
+    /// returns the color theme used
+    pub fn color_scheme(&self) -> ColorScheme {
         self.window_adapter()
             .internal(crate::InternalToken)
-            .map_or(false, |x| x.dark_color_scheme())
+            .map_or(ColorScheme::Unknown, |x| x.color_scheme())
     }
 
     /// Show a popup at the given position relative to the item
@@ -998,7 +1016,7 @@ impl WindowInner {
 
                     if !popup_region.is_empty() {
                         let window_adapter = self.window_adapter();
-                        window_adapter.renderer().mark_dirty_region(popup_region.to_box2d());
+                        window_adapter.renderer().mark_dirty_region(popup_region.into());
                         window_adapter.request_redraw();
                     }
                 }
@@ -1250,9 +1268,10 @@ pub mod ffi {
     pub unsafe extern "C" fn slint_windowrc_set_focus_item(
         handle: *const WindowAdapterRcOpaque,
         focus_item: &ItemRc,
+        set_focus: bool,
     ) {
         let window_adapter = &*(handle as *const Rc<dyn WindowAdapter>);
-        WindowInner::from_pub(window_adapter.window()).set_focus_item(focus_item)
+        WindowInner::from_pub(window_adapter.window()).set_focus_item(focus_item, set_focus)
     }
 
     /// Associates the window with the given component.
@@ -1448,11 +1467,22 @@ pub mod ffi {
 
     /// Return wether the style is using a dark theme
     #[no_mangle]
-    pub unsafe extern "C" fn slint_windowrc_dark_color_scheme(
+    pub unsafe extern "C" fn slint_windowrc_color_scheme(
         handle: *const WindowAdapterRcOpaque,
-    ) -> bool {
+    ) -> ColorScheme {
         let window_adapter = &*(handle as *const Rc<dyn WindowAdapter>);
-        window_adapter.internal(crate::InternalToken).map_or(false, |x| x.dark_color_scheme())
+        window_adapter
+            .internal(crate::InternalToken)
+            .map_or(ColorScheme::Unknown, |x| x.color_scheme())
+    }
+
+    /// Return the default-font-size property of the WindowItem
+    #[no_mangle]
+    pub unsafe extern "C" fn slint_windowrc_default_font_size(
+        handle: *const WindowAdapterRcOpaque,
+    ) -> f32 {
+        let window_adapter = &*(handle as *const Rc<dyn WindowAdapter>);
+        window_adapter.window().0.window_item().unwrap().as_pin_ref().default_font_size().get()
     }
 
     /// Dispatch a key pressed or release event

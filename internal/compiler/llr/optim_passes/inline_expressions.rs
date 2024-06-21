@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 //! Inline properties that are simple enough to be inlined
 //!
@@ -7,7 +7,7 @@
 //! in the calling expression
 
 use crate::expression_tree::BuiltinFunction;
-use crate::llr::{EvaluationContext, Expression, PropertyInfoResult, PublicComponent};
+use crate::llr::{CompilationUnit, EvaluationContext, Expression, PropertyInfoResult};
 
 const PROPERTY_ACCESS_COST: isize = 1000;
 const ALLOC_COST: isize = 700;
@@ -39,7 +39,9 @@ fn expression_cost(exp: &Expression, ctx: &EvaluationContext) -> isize {
         Expression::UnaryOp { .. } => 1,
         Expression::ImageReference { .. } => 1,
         Expression::Condition { .. } => 10,
-        Expression::Array { .. } => ALLOC_COST,
+        // Never inline an array because it is a model and when shared it needs to keep its identity
+        // (cf #5249)  (otherwise it would be `ALLOC_COST`)
+        Expression::Array { .. } => return isize::MAX,
         Expression::Struct { .. } => 1,
         Expression::EasingCurve(_) => 1,
         Expression::LinearGradient { .. } => ALLOC_COST,
@@ -81,13 +83,14 @@ fn builtin_function_cost(function: &BuiltinFunction) -> isize {
         BuiltinFunction::ATan => 10,
         BuiltinFunction::Log => 10,
         BuiltinFunction::Pow => 10,
-        BuiltinFunction::SetFocusItem => isize::MAX,
+        BuiltinFunction::SetFocusItem | BuiltinFunction::ClearFocusItem => isize::MAX,
         BuiltinFunction::ShowPopupWindow | BuiltinFunction::ClosePopupWindow => isize::MAX,
         BuiltinFunction::SetSelectionOffsets => isize::MAX,
         BuiltinFunction::ItemMemberFunction(..) => isize::MAX,
         BuiltinFunction::StringToFloat => 50,
         BuiltinFunction::StringIsFloat => 50,
         BuiltinFunction::ColorRgbaStruct => 50,
+        BuiltinFunction::ColorHsvaStruct => 50,
         BuiltinFunction::ColorBrighter => 50,
         BuiltinFunction::ColorDarker => 50,
         BuiltinFunction::ColorTransparentize => 50,
@@ -96,19 +99,27 @@ fn builtin_function_cost(function: &BuiltinFunction) -> isize {
         BuiltinFunction::ImageSize => 50,
         BuiltinFunction::ArrayLength => 50,
         BuiltinFunction::Rgb => 50,
+        BuiltinFunction::Hsv => 50,
         BuiltinFunction::ImplicitLayoutInfo(_) => isize::MAX,
         BuiltinFunction::ItemAbsolutePosition => isize::MAX,
         BuiltinFunction::RegisterCustomFontByPath => isize::MAX,
         BuiltinFunction::RegisterCustomFontByMemory => isize::MAX,
         BuiltinFunction::RegisterBitmapFont => isize::MAX,
-        BuiltinFunction::DarkColorScheme => isize::MAX,
+        BuiltinFunction::ColorScheme => isize::MAX,
+        BuiltinFunction::MonthDayCount => isize::MAX,
+        BuiltinFunction::MonthOffset => isize::MAX,
+        BuiltinFunction::FormatDate => isize::MAX,
+        BuiltinFunction::DateNow => isize::MAX,
+        BuiltinFunction::ValidDate => isize::MAX,
+        BuiltinFunction::ParseDate => isize::MAX,
         BuiltinFunction::SetTextInputFocused => PROPERTY_ACCESS_COST,
         BuiltinFunction::TextInputFocused => PROPERTY_ACCESS_COST,
         BuiltinFunction::Translate => 2 * ALLOC_COST + PROPERTY_ACCESS_COST,
+        BuiltinFunction::Use24HourFormat => 2 * ALLOC_COST + PROPERTY_ACCESS_COST,
     }
 }
 
-pub fn inline_simple_expressions(root: &PublicComponent) {
+pub fn inline_simple_expressions(root: &CompilationUnit) {
     root.for_each_expression(&mut |e, ctx| {
         inline_simple_expressions_in_expression(&mut e.borrow_mut(), ctx)
     })

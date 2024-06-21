@@ -1,5 +1,5 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-1.1 OR LicenseRef-Slint-commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
 
 export component SliderBase {
     in property <bool> enabled <=> touch-area.enabled;
@@ -17,9 +17,10 @@ export component SliderBase {
     out property <bool> handle-has-hover: touch-area.mouse-x >= root.handle-x && touch-area.mouse-x <= root.handle-x + root.handle-width &&
         touch-area.mouse-y >= root.handle-y && touch-area.mouse-y <= root.handle-y + root.handle-height;
     out property <bool> handle-pressed;
-    in-out property <float> value: 0;
+    in-out property <float> value: minimum;
 
     callback changed(/* value */ float);
+    callback released(/* value */ float);
 
     private property <length> ref-size: !root.vertical ? root.handle-width : root.handle-height;
 
@@ -37,6 +38,9 @@ export component SliderBase {
             }
 
             if (event.kind == PointerEventKind.up) {
+                if (root.handle-pressed) {
+                    root.released(root.value);
+                }
                 root.handle-pressed = false;
                 return;
             }
@@ -83,6 +87,17 @@ export component SliderBase {
             }
 
             reject
+        }
+
+        key-released(event) => {
+            if (!self.enabled) {
+                return reject;
+            }
+            if (!vertical && event.text == Key.RightArrow) || (vertical && event.text == Key.DownArrow)
+               || (!vertical && event.text == Key.LeftArrow) || (vertical && event.text == Key.UpArrow) {
+                root.released(root.value);
+            }
+            return accept;
         }
     }
 
